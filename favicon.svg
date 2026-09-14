@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Background Card -->
+  <rect x="4" y="2" width="24" height="28" rx="4" fill="#3b82f6"/>
+  <!-- Grid Matrix Lines representing notes/data -->
+  <line x1="9" y1="9" x2="23" y2="9" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="9" y1="15" x2="23" y2="15" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="9" y1="21" x2="16" y2="21" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

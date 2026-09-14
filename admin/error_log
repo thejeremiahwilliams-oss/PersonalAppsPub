@@ -1,0 +1,134 @@
+[02-Aug-2026 17:28:06 UTC] PHP Warning:  require_once(../includes/auth_functions.php): Failed to open stream: No such file or directory in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 8
+[02-Aug-2026 17:28:06 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '../includes/auth_functions.php' (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php:8
+Stack trace:
+#0 {main}
+  thrown in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 8
+[02-Aug-2026 12:35:08 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_approved' in 'SELECT' in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php:108
+Stack trace:
+#0 /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php(108): PDO->query()
+#1 {main}
+  thrown in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 108
+[02-Aug-2026 17:53:18 UTC] PHP Parse error:  Unmatched '}' in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 115
+[02-Aug-2026 17:53:24 UTC] PHP Parse error:  Unmatched '}' in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 115
+[02-Aug-2026 18:08:23 UTC] PHP Parse error:  syntax error, unexpected string content "", expecting "-" or identifier or variable or number in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 99
+[02-Aug-2026 13:44:26 America/Chicago] PHP Fatal error:  Uncaught Error: Class "PHPMailer\PHPMailer\PHPMailer" not found in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php:17
+Stack trace:
+#0 /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php(97): send_memo_email()
+#1 {main}
+  thrown in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php on line 17
+[02-Aug-2026 13:45:37 America/Chicago] PHP Fatal error:  Uncaught Error: Class "PHPMailer\PHPMailer\PHPMailer" not found in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php:19
+Stack trace:
+#0 /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php(97): send_memo_email()
+#1 {main}
+  thrown in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php on line 19
+[02-Aug-2026 13:46:28 America/Chicago] PHP Fatal error:  Uncaught Error: Class "PHPMailer\PHPMailer\PHPMailer" not found in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php:19
+Stack trace:
+#0 /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php(97): send_memo_email()
+#1 {main}
+  thrown in /home/brokwxrm/memomatrix.brokenhappy.com/includes/mailer.php on line 19
+[02-Aug-2026 20:12:01 UTC] PHP Parse error:  Unclosed '{' on line 42 does not match ')' in /home/brokwxrm/memomatrix.brokenhappy.com/includes/auth_functions.php on line 44
+[02-Aug-2026 20:12:23 UTC] PHP Parse error:  Unmatched '}' in /home/brokwxrm/memomatrix.brokenhappy.com/includes/auth_functions.php on line 46
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Warning:  Undefined array key "action" in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[03-Aug-2026 21:11:56 America/Chicago] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/brokwxrm/memomatrix.brokenhappy.com/public/admin/users.php on line 366
+[08-Aug-2026 16:48:51 America/Chicago] PHP Warning:  include(../../includes/header.php): Failed to open stream: No such file or directory in /home/brokwxrm/memomatrix.brokenhappy.com/admin/users.php on line 165
+[08-Aug-2026 16:48:51 America/Chicago] PHP Warning:  include(): Failed opening '../../includes/header.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/brokwxrm/memomatrix.brokenhappy.com/admin/users.php on line 165
+[08-Aug-2026 16:48:51 America/Chicago] PHP Warning:  include(../../includes/footer.php): Failed to open stream: No such file or directory in /home/brokwxrm/memomatrix.brokenhappy.com/admin/users.php on line 402
+[08-Aug-2026 16:48:51 America/Chicago] PHP Warning:  include(): Failed opening '../../includes/footer.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/brokwxrm/memomatrix.brokenhappy.com/admin/users.php on line 402
