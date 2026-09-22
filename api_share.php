@@ -20,9 +20,18 @@ if ($type === 'note') $table = 'notes';
 elseif ($type === 'kb') $table = 'kb_articles';
 elseif ($type === 'task') $table = 'tasks';
 elseif ($type === 'meeting') $table = 'meetings';
+elseif ($type === 'budget') $table = 'budget_plans';
+elseif ($type === 'ledger') $table = 'yearly_ledgers';
 else {
     echo json_encode(['success' => false, 'error' => 'Invalid share type']);
     exit;
+}
+
+// Auto-heal schema: Ensure the table has a share_token column
+try {
+    $pdo->exec("ALTER TABLE {$table} ADD COLUMN share_token VARCHAR(64) DEFAULT NULL UNIQUE");
+} catch (Exception $e) {
+    // Column already exists, proceed normally
 }
 
 try {

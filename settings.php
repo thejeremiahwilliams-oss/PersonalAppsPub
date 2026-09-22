@@ -69,6 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         elseif ($revoke_type === 'kb') $table = 'kb_articles';
         elseif ($revoke_type === 'task') $table = 'tasks';
         elseif ($revoke_type === 'meeting') $table = 'meetings';
+        elseif ($revoke_type === 'budget') $table = 'budget_plans';
+        elseif ($revoke_type === 'ledger') $table = 'yearly_ledgers';
         
         if ($table) {
             try {
@@ -122,6 +124,16 @@ try {
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
+    // Budget
+    $stmt = $pdo->prepare("SELECT id, CONCAT('Budget Plan - ', budget_month, '/', budget_year) as title, 'budget' as type, share_token, updated_at as created_at FROM budget_plans WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt->execute([':uid' => $user_id]);
+    $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    
+    // Ledger
+    $stmt = $pdo->prepare("SELECT id, CONCAT('Annual Ledger - ', ledger_year) as title, 'ledger' as type, share_token, updated_at as created_at FROM yearly_ledgers WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt->execute([':uid' => $user_id]);
+    $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    
     // Sort all combined links by newest first
     usort($shared_links, function($a, $b) {
         return strtotime($b['created_at']) - strtotime($a['created_at']);
@@ -141,6 +153,8 @@ include 'includes/header.php';
     .badge-kb { background: rgba(34, 197, 94, 0.1); color: var(--success); border-color: var(--success); }
     .badge-task { background: rgba(234, 179, 8, 0.1); color: var(--warning); border-color: var(--warning); }
     .badge-meeting { background: rgba(59, 130, 246, 0.1); color: var(--accent); border-color: var(--accent); }
+    .badge-budget { background: rgba(16, 185, 129, 0.1); color: #10b981; border-color: #10b981; }
+    .badge-ledger { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: #f59e0b; }
     
     .share-link-url { color: var(--accent); text-decoration: none; word-break: break-all; font-weight: 500; }
     .share-link-url:hover { text-decoration: underline; }
@@ -258,7 +272,7 @@ include 'includes/header.php';
                             
                             // Reconstruct the exact URL that api_share.php generated
                             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
-                            $full_url = $protocol . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/shared.php?t=" . $link['token'] . "&type=" . $link['type'];
+                            $full_url = $protocol . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . "/shared.php?t=" . $link['share_token'] . "&type=" . $link['type'];
                         ?>
                         <tr>
                             <td data-label="Item Title" style="font-weight: 500;">

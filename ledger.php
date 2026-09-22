@@ -35,7 +35,7 @@ try {
 if (isset($_GET['api'])) {
     header('Content-Type: application/json');
     
-    // FETCH BUDGET CATEGORIES, INCOME STREAMS, AND METHODS FOR HUD
+    // FETCH BUDGET CATEGORIES AND INCOMES FOR HUD
     if ($_GET['api'] === 'budget_data') {
         $year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
         $month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('n');
@@ -52,30 +52,25 @@ if (isset($_GET['api'])) {
 
         $budgetResponse = [
             'categories' => [], 
-            'incomes' => [],
-            'methods' => ['Cash/Debit' => 0, 'Credit Card' => 0]
+            'incomes' => []
         ];
 
         if ($row && !empty($row['budget_data'])) {
             $data = json_decode($row['budget_data'], true);
             
-            // Look through all expense-like sections (Expenses, Debts, Savings)
+            // 1. Process Expenses & Savings (Extracting ONLY the Parent Group)
             $sections = ['expenses', 'debts', 'debt', 'savings', 'saving'];
             foreach ($sections as $sec) {
                 if (isset($data[$sec]) && is_array($data[$sec])) {
                     foreach ($data[$sec] as $item) {
-                        // Extract ONLY the top-level group header (ignoring the specific item name entirely)
                         $grp = trim($item['group'] ?? '');
-                        if (empty($grp) && strpos($sec, 'debt') !== false) {
-                            $grp = 'Credit Card';
-                        } elseif (empty($grp)) {
+                        if (empty($grp)) {
                             $grp = 'Uncategorized';
                         }
                         
                         $amt = (float)($item['amount'] ?? 0);
-                        $method = trim($item['method'] ?? 'Cash/Debit');
 
-                        // 1. Map and Sum the Group Header Only
+                        // Map and Sum the Group Header
                         $actual_grp = $grp;
                         foreach (array_keys($budgetResponse['categories']) as $existing_cat) {
                             if (strcasecmp($existing_cat, $grp) === 0) {
@@ -84,25 +79,11 @@ if (isset($_GET['api'])) {
                             }
                         }
                         $budgetResponse['categories'][$actual_grp] = ($budgetResponse['categories'][$actual_grp] ?? 0) + $amt;
-
-                        // 2. Map Methods
-                        $actual_method = $method;
-                        foreach (array_keys($budgetResponse['methods']) as $existing_method) {
-                            if (strcasecmp($existing_method, $method) === 0) {
-                                $actual_method = $existing_method; 
-                                break;
-                            }
-                        }
-                        if (isset($budgetResponse['methods'][$actual_method])) {
-                            $budgetResponse['methods'][$actual_method] += $amt;
-                        } else {
-                            $budgetResponse['methods']['Cash/Debit'] += $amt;
-                        }
                     }
                 }
             }
 
-            // Income Streams
+            // 2. Process Income Streams
             if (isset($data['income']) && is_array($data['income'])) {
                 foreach ($data['income'] as $inc) {
                     $name = trim($inc['name'] ?? 'Income');
@@ -131,13 +112,10 @@ if (isset($_GET['api'])) {
                 ['id' => 'date', 'name' => 'DATE', 'width' => '80px'],
                 ['id' => 'item', 'name' => 'ITEM', 'width' => '150px'],
                 ['id' => 'category', 'name' => 'CATEGORY / INCOME', 'width' => '160px'],
-                ['id' => 'method', 'name' => 'METHOD', 'width' => '110px'],
                 ['id' => 'desc', 'name' => 'DESCRIPTION', 'width' => '140px'],
                 ['id' => 'amount', 'name' => 'AMOUNT', 'width' => '100px'],
                 ['id' => 'total', 'name' => 'TOTAL', 'width' => '100px'],
-                ['id' => 'completed', 'name' => 'COMPLETED', 'width' => '110px'],
-                ['id' => 'ref', 'name' => 'REFERENCE', 'width' => '90px'],
-                ['id' => 'check', 'name' => 'CHECK', 'width' => '90px']
+                ['id' => 'completed', 'name' => 'STATUS', 'width' => '110px']
             ];
             
             $months = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
@@ -146,7 +124,7 @@ if (isset($_GET['api'])) {
             foreach ($months as $m) {
                 $emptyRows = [];
                 for($i=0; $i<50; $i++) {
-                    $emptyRows[] = ["date"=>"", "item"=>"", "category"=>"", "method"=>"Cash/Debit", "desc"=>"", "amount"=>"", "completed"=>"", "ref"=>"", "check"=>""];
+                    $emptyRows[] = ["date"=>"", "item"=>"", "category"=>"", "desc"=>"", "amount"=>"", "total"=>"", "completed"=>""];
                 }
                 $emptyData['months'][$m] = $emptyRows;
             }
@@ -187,8 +165,6 @@ if (isset($_GET['api'])) {
                     foreach ($rows as &$r) {
                         if (isset($r['date'])) $r['date'] = '';
                         if (isset($r['completed'])) $r['completed'] = '';
-                        if (isset($r['ref'])) $r['ref'] = '';
-                        if (isset($r['check'])) $r['check'] = '';
                     }
                 }
             }
@@ -211,6 +187,9 @@ if (isset($_GET['api'])) {
 $page_title = "Annual Ledger - PersonalApps";
 include 'includes/header.php';
 ?>
+
+<!-- Chart.js for Annual Review Dashboard -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
     :root {
@@ -252,17 +231,9 @@ include 'includes/header.php';
     .global-total-box .title { border-bottom: 1px solid var(--sheet-border-heavy); font-weight: bold; padding: 3px 6px; font-size: 11px; text-align: left; color: var(--text-main); }
     .global-total-box .val { padding: 4px 6px; font-weight: bold; font-size: 14px; color: var(--text-main); }
 
-    /* Non-scrolling Wrapping HUD Grid */
-    .hud-grid { display: grid; grid-template-columns: 3fr 1fr; gap: 12px; margin-bottom: 12px; }
-    @media(max-width: 900px) { .hud-grid { grid-template-columns: 1fr; } }
-
-    .budget-hud { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; align-items: stretch; max-height: 140px; overflow-y: auto; }
+    .budget-hud { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; align-items: stretch; max-height: 140px; overflow-y: auto; margin-bottom: 12px; }
     .budget-hud::-webkit-scrollbar { width: 6px; }
     .budget-hud::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
-
-    .cc-reconcile-card { background: var(--card-bg); border: 1px solid var(--warning); border-radius: 8px; padding: 10px 15px; display: flex; flex-direction: column; justify-content: center; }
-    .cc-reconcile-card h4 { margin: 0 0 5px 0; font-size: 0.8em; color: var(--warning); text-transform: uppercase; letter-spacing: 0.5px; }
-    .cc-reconcile-row { display: flex; justify-content: space-between; font-size: 0.9em; font-weight: bold; }
 
     .table-container { flex-grow: 1; overflow: auto; background: var(--bg-color); position: relative; }
     .excel-table { border-collapse: collapse; table-layout: fixed; font-size: 13px; width: max-content; min-width: 100%; }
@@ -289,6 +260,18 @@ include 'includes/header.php';
     .tab-btn { background: var(--card-bg); border: 1px solid var(--border-color); border-bottom: none; padding: 8px 15px; cursor: pointer; font-size: 13px; color: var(--text-muted); white-space: nowrap; border-radius: 6px 6px 0 0; transition: 0.2s; }
     .tab-btn.active { background: var(--bg-color); color: var(--accent); font-weight: bold; box-shadow: 0 -3px 0 0 var(--accent) inset; border-color: var(--border-color); }
     .tab-btn:hover:not(.active) { background: var(--bg-color); color: var(--text-main); }
+    
+    /* Annual Review Styling */
+    .summary-card-yr { flex: 1; min-width: 200px; padding: 20px; background: var(--card-bg); border-radius: 12px; text-align: center; border: 1px solid var(--border-color); }
+    .summary-card-yr h3 { color: var(--text-muted); margin: 0 0 10px 0; font-size: 0.9em; text-transform: uppercase; }
+    .summary-card-yr .val { font-size: 2.2em; font-weight: bold; }
+    
+    /* Modals */
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 15px; }
+    .modal-content { background: var(--card-bg); padding: 30px; border-radius: 12px; width: 500px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; overflow-y: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color); box-sizing: border-box; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 13px; }
+    .modal-header h3 { margin: 0; font-size: 1.3em; color: var(--text-main); } 
+    .close-modal { background: none; border: none; font-size: 1.5em; color: var(--text-muted); cursor: pointer; padding: 0; }
 </style>
 
 <div class="toolbar-top">
@@ -303,7 +286,8 @@ include 'includes/header.php';
             <button onclick="copyYear()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);" title="Copy columns and layout to a new year">📋 Copy</button>
         </div>
         
-        <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;">
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;" id="standard-toolbar">
+            <button id="btn-batch-edit" onclick="openBatchEditModal()" class="btn btn-small" style="font-size:11px; display:none; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); font-weight: bold;">✏️ Category</button>
             <button id="btn-delete-selected" onclick="deleteSelectedRows()" class="btn btn-small btn-danger" style="font-size:11px; display:none; padding: 5px 10px; border-radius: 4px; border: none; font-weight: bold;">🗑 Delete</button>
             <input type="text" id="ledger-search" placeholder="🔍 Search..." oninput="filterTable(this.value)" style="padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-main); width: 120px; outline:none; font-size: 12px;">
             <button onclick="document.getElementById('csv-upload').click()" class="btn btn-small" style="font-size:11px; padding: 5px 10px;">📥 Import</button>
@@ -314,7 +298,7 @@ include 'includes/header.php';
         <span id="save-status">💾 Saving...</span>
     </div>
     
-    <div class="toolbar-stats">
+    <div class="toolbar-stats" id="standard-stats">
         <div style="display:flex; align-items:center; gap:6px; color:var(--text-main); font-size: 13px;">
             <strong>Start:</strong>
             <input type="number" id="annual-start-balance" value="0" oninput="triggerSave(true)" style="padding:4px; width:90px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;">
@@ -330,36 +314,59 @@ include 'includes/header.php';
     </div>
 </div>
 
-<!-- HUD Grid (Wrapping & Non-Scrolling) -->
-<div class="hud-grid">
-    <div class="budget-hud" id="budget-hud-container">
-        <!-- Populated by JS -->
-    </div>
-    <div class="cc-reconcile-card">
-        <h4>💳 Credit Card Month-End</h4>
-        <div class="cc-reconcile-row">
-            <span style="color:var(--text-muted);">Month Float:</span>
-            <span id="cc-actual-val" style="color:var(--warning);">$0.00</span>
-        </div>
-        <div class="cc-reconcile-row" style="margin-top: 4px; border-top: 1px dashed var(--border-color); padding-top: 4px;">
-            <span style="color:var(--text-muted);">Planned Bill:</span>
-            <span id="cc-planned-val" style="color:var(--text-main);">$0.00</span>
-        </div>
-    </div>
+<div class="budget-hud" id="budget-hud-container">
+    <!-- Populated by JS -->
 </div>
 
 <div class="spreadsheet-wrapper">
-    <div class="table-container">
+    <!-- Standard Spreadseet View -->
+    <div class="table-container" id="spreadsheet-view">
         <table class="excel-table" id="ledger-table">
             <thead></thead>
             <tbody id="ledger-body"></tbody>
         </table>
     </div>
+    
+    <!-- Annual Review Dashboard View -->
+    <div id="annual-review-view" style="display:none; padding: 20px; overflow-y: auto; flex-grow: 1; background: var(--bg-color);">
+        <div style="display: flex; gap: 20px; margin-bottom: 25px; flex-wrap: wrap;" id="annual-summary-cards">
+            <!-- Populated by JS -->
+        </div>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+            <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: 320px;">
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: 320px;">
+                <canvas id="incomeChart"></canvas>
+            </div>
+            <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: 320px;">
+                <canvas id="categoryChart"></canvas>
+            </div>
+        </div>
+    </div>
+
     <div class="tabs-bar" id="tabs-container"></div>
 </div>
 
+<!-- Batch Edit Category Modal -->
+<div id="batchEditModal" class="modal-overlay">
+    <div class="modal-content" style="width: 400px;">
+        <div class="modal-header">
+            <h3>Batch Edit Category</h3>
+            <button class="close-modal" onclick="closeBatchEditModal()">✕</button>
+        </div>
+        <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">
+            Select a new category for the <span id="batch-edit-count"></span> selected rows.
+        </p>
+        <select id="batchEditCategory" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); margin-bottom: 15px; outline: none;"></select>
+        <button class="btn" style="width: 100%; background: var(--accent); color: white;" onclick="applyBatchEdit()">Apply to Selected</button>
+    </div>
+</div>
+
 <script>
-    const tabs = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
+    const tabs = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec", "Review"];
     const tabMap = {"Jan":1, "Feb":2, "Mar":3, "Apr":4, "May":5, "June":6, "July":7, "Aug":8, "Sept":9, "Oct":10, "Nov":11, "Dec":12};
     let currentTab = "<?= $current_month_tab ?>"; 
     
@@ -367,19 +374,20 @@ include 'includes/header.php';
         { id: 'date', name: 'DATE', width: '80px' },
         { id: 'item', name: 'ITEM', width: '150px' },
         { id: 'category', name: 'CATEGORY / INCOME', width: '160px' },
-        { id: 'method', name: 'METHOD', width: '110px' },
         { id: 'desc', name: 'DESCRIPTION', width: '140px' },
         { id: 'amount', name: 'AMOUNT', width: '100px' },
         { id: 'total', name: 'TOTAL', width: '100px' },
-        { id: 'completed', name: 'COMPLETED', width: '110px' },
-        { id: 'ref', name: 'REFERENCE', width: '90px' },
-        { id: 'check', name: 'CHECK', width: '90px' }
+        { id: 'completed', name: 'STATUS', width: '110px' }
     ];
 
     let ledgerData = { annual_start: 0, columns: [], months: {} };
     let monthStartBalances = {}; 
-    let budgetData = { categories: {}, incomes: {}, methods: { 'Cash/Debit': 0, 'Credit Card': 0 } };
+    let budgetData = { categories: {}, incomes: {} };
     let saveTimeout = null;
+    
+    let monthlyChartInst = null;
+    let categoryChartInst = null;
+    let incomeChartInst = null;
 
     document.addEventListener("DOMContentLoaded", () => {
         renderTabs();
@@ -387,6 +395,8 @@ include 'includes/header.php';
     });
 
     function fetchBudgetData() {
+        if(currentTab === 'Review') return Promise.resolve(); // No HUD for Review tab
+        
         const year = document.getElementById('year-select').value;
         const monthNum = tabMap[currentTab];
         return fetch(`ledger.php?api=budget_data&year=${year}&month=${monthNum}`)
@@ -399,23 +409,24 @@ include 'includes/header.php';
     function updateBudgetHUD() {
         const hud = document.getElementById('budget-hud-container');
         if (!hud) return;
+        if (currentTab === 'Review') {
+            hud.style.display = 'none';
+            return;
+        }
+        hud.style.display = 'flex';
         
         let cats = budgetData.categories || {};
         let incomes = budgetData.incomes || {};
         
         if (Object.keys(cats).length === 0 && Object.keys(incomes).length === 0) {
             hud.innerHTML = '<div style="color:var(--text-muted); font-size:0.9em; padding:5px; width:100%; text-align:center;">No budget planned for this month. Set up categories in the Budget Planner.</div>';
-            document.getElementById('cc-actual-val').innerText = '$0.00';
-            document.getElementById('cc-planned-val').innerText = '$0.00';
             return;
         }
         
         let actuals = {};
         let actualIncomes = {};
-        let actualMethods = { 'Cash/Debit': 0, 'Credit Card': 0 };
         let rows = ledgerData.months[currentTab] || [];
 
-        // Build case-insensitive maps to ensure Ledger perfectly matches Budget Planner
         let budgetCatsMap = {};
         for (let k in cats) budgetCatsMap[k.toLowerCase()] = k;
 
@@ -424,8 +435,6 @@ include 'includes/header.php';
 
         rows.forEach(row => {
             let rawCat = trimStr(row.category).toLowerCase();
-            let rawInc = trimStr(row.income_source).toLowerCase(); // Legacy fallback
-            let rawMethod = trimStr(row.method).toLowerCase() || 'cash/debit';
             let amt = parseFloat(row.amount);
             
             if (!isNaN(amt)) {
@@ -435,18 +444,9 @@ include 'includes/header.php';
                         let properCat = budgetCatsMap[rawCat];
                         actuals[properCat] = (actuals[properCat] || 0) + absAmt;
                     }
-                    
-                    let methodKey = 'Cash/Debit';
-                    if (rawMethod.includes('credit')) methodKey = 'Credit Card';
-                    
-                    actualMethods[methodKey] = (actualMethods[methodKey] || 0) + absAmt;
-                    
                 } else if (amt > 0) {
                     if (budgetIncomesMap[rawCat]) {
                         let properInc = budgetIncomesMap[rawCat];
-                        actualIncomes[properInc] = (actualIncomes[properInc] || 0) + amt;
-                    } else if (budgetIncomesMap[rawInc]) { 
-                        let properInc = budgetIncomesMap[rawInc];
                         actualIncomes[properInc] = (actualIncomes[properInc] || 0) + amt;
                     }
                 }
@@ -490,11 +490,6 @@ include 'includes/header.php';
             `;
         }
         hud.innerHTML = html;
-
-        let plannedCC = budgetData.methods['Credit Card'] || 0;
-        let actualCC = actualMethods['Credit Card'] || 0;
-        document.getElementById('cc-actual-val').innerText = '$' + actualCC.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('cc-planned-val').innerText = '$' + parseFloat(plannedCC).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
     function trimStr(str) {
@@ -507,7 +502,14 @@ include 'includes/header.php';
         tabs.forEach(tab => {
             const btn = document.createElement('button');
             btn.className = `tab-btn ${tab === currentTab ? 'active' : ''}`;
-            btn.innerText = tab;
+            
+            if(tab === 'Review') {
+                btn.innerHTML = '📊 Review';
+                btn.style.marginLeft = 'auto'; // push to far right
+            } else {
+                btn.innerText = tab;
+            }
+            
             btn.onclick = () => {
                 document.getElementById('ledger-search').value = ''; 
                 switchTab(tab);
@@ -528,8 +530,9 @@ include 'includes/header.php';
                     ledgerData.columns = JSON.parse(JSON.stringify(defaultColumns));
                 }
                 
-                // Ensure single combined column exists, remove legacy separate columns if found
-                ledgerData.columns = ledgerData.columns.filter(c => c.id !== 'income_source');
+                // Auto-heal schema to completely remove legacy columns, but PRESERVE completed status
+                ledgerData.columns = ledgerData.columns.filter(c => c.id !== 'income_source' && c.id !== 'method' && c.id !== 'check');
+                
                 if (!ledgerData.columns.find(c => c.id === 'category')) {
                     let itemIndex = ledgerData.columns.findIndex(c => c.id === 'item');
                     ledgerData.columns.splice(itemIndex + 1, 0, { id: 'category', name: 'CATEGORY / INCOME', width: '160px' });
@@ -538,31 +541,213 @@ include 'includes/header.php';
                     catCol.name = 'CATEGORY / INCOME';
                     catCol.width = '160px';
                 }
-                
-                if (!ledgerData.columns.find(c => c.id === 'method')) {
-                    let catIndex = ledgerData.columns.findIndex(c => c.id === 'category');
-                    ledgerData.columns.splice(catIndex + 1, 0, { id: 'method', name: 'METHOD', width: '110px' });
+
+                if (!ledgerData.columns.find(c => c.id === 'completed')) {
+                    ledgerData.columns.push({ id: 'completed', name: 'STATUS', width: '110px' });
+                } else {
+                    let compCol = ledgerData.columns.find(c => c.id === 'completed');
+                    compCol.name = 'STATUS';
+                    compCol.width = '110px';
                 }
                 
                 document.getElementById('annual-start-balance').value = ledgerData.annual_start || 0;
-                document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
                 
-                fetchBudgetData().then(() => {
-                    calculateAllTotals();
-                    renderHeaders();
-                    renderTable();
-                });
+                if (currentTab !== 'Review') {
+                    document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
+                }
+                
+                calculateAllTotals();
+                
+                if(currentTab === 'Review') {
+                    renderAnnualReview();
+                } else {
+                    fetchBudgetData().then(() => {
+                        renderHeaders();
+                        renderTable();
+                        updateBudgetHUD();
+                    });
+                }
             })
             .catch(err => console.error(err));
     }
 
     function switchTab(tabName) {
         currentTab = tabName;
-        document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
         renderTabs();
-        fetchBudgetData().then(() => {
-            renderTable();
-            updateBudgetHUD();
+        
+        if (currentTab === 'Review') {
+            document.getElementById('spreadsheet-view').style.display = 'none';
+            document.getElementById('standard-toolbar').style.display = 'none';
+            document.getElementById('standard-stats').style.display = 'none';
+            document.getElementById('budget-hud-container').style.display = 'none';
+            document.getElementById('annual-review-view').style.display = 'block';
+            renderAnnualReview();
+        } else {
+            document.getElementById('annual-review-view').style.display = 'none';
+            document.getElementById('spreadsheet-view').style.display = 'block';
+            document.getElementById('standard-toolbar').style.display = 'flex';
+            document.getElementById('standard-stats').style.display = 'flex';
+            document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
+            
+            fetchBudgetData().then(() => {
+                renderHeaders();
+                renderTable();
+                updateBudgetHUD();
+            });
+        }
+    }
+
+    function renderAnnualReview() {
+        let totalIncome = 0;
+        let totalExpense = 0;
+        let catTotals = {};
+        let incTotals = {};
+        
+        let monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
+        let monthlyIncome = [];
+        let monthlyExpense = [];
+
+        monthLabels.forEach(m => {
+            let mInc = 0; 
+            let mExp = 0;
+            
+            if(ledgerData.months[m]) {
+                ledgerData.months[m].forEach(row => {
+                    let amt = parseFloat(row.amount);
+                    if(!isNaN(amt)) {
+                        if(amt > 0) {
+                            mInc += amt;
+                            totalIncome += amt;
+                            
+                            let incCat = trimStr(row.category) || 'Uncategorized';
+                            incTotals[incCat] = (incTotals[incCat] || 0) + amt;
+                        } else if(amt < 0) {
+                            let absAmt = Math.abs(amt);
+                            mExp += absAmt;
+                            totalExpense += absAmt;
+                            
+                            let cat = trimStr(row.category) || 'Uncategorized';
+                            catTotals[cat] = (catTotals[cat] || 0) + absAmt;
+                        }
+                    }
+                });
+            }
+            monthlyIncome.push(mInc);
+            monthlyExpense.push(mExp);
+        });
+        
+        let net = totalIncome - totalExpense;
+        let netColor = net >= 0 ? 'var(--success)' : 'var(--danger)';
+
+        // Render Summary Cards
+        document.getElementById('annual-summary-cards').innerHTML = `
+            <div class="summary-card-yr" style="border-top-color: var(--success);">
+                <h3>Total Income</h3>
+                <div class="val" style="color: var(--success);">$${totalIncome.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+            <div class="summary-card-yr" style="border-top-color: var(--danger);">
+                <h3>Total Spent</h3>
+                <div class="val" style="color: var(--danger);">$${totalExpense.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+            <div class="summary-card-yr" style="border-top-color: ${netColor};">
+                <h3>Net Savings</h3>
+                <div class="val" style="color: ${netColor};">$${net.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+            </div>
+        `;
+
+        // Destroy old chart instances if they exist
+        if(monthlyChartInst) monthlyChartInst.destroy();
+        if(categoryChartInst) categoryChartInst.destroy();
+        if(incomeChartInst) incomeChartInst.destroy();
+
+        // Render Monthly Bar Chart
+        const ctxMonthly = document.getElementById('monthlyChart').getContext('2d');
+        monthlyChartInst = new Chart(ctxMonthly, {
+            type: 'bar',
+            data: {
+                labels: monthLabels,
+                datasets: [
+                    {
+                        label: 'Income',
+                        data: monthlyIncome,
+                        backgroundColor: '#22c55e',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Expenses',
+                        data: monthlyExpense,
+                        backgroundColor: '#ef4444',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#94a3b8' } },
+                    title: { display: true, text: 'Monthly Cash Flow', color: '#f8fafc', font: { size: 16 } }
+                },
+                scales: {
+                    y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                }
+            }
+        });
+
+        // Setup common colors for the doughnuts
+        let chartColors = ['#3b82f6', '#ef4444', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f43f5e', '#84cc16', '#d946ef', '#14b8a6', '#64748b', '#eab308'];
+
+        // Render Income Doughnut Chart
+        let incLabels = Object.keys(incTotals).sort((a,b) => incTotals[b] - incTotals[a]); // Sort highest first
+        let incData = incLabels.map(l => incTotals[l]);
+        
+        let incColors = ['#10b981', '#3b82f6', '#06b6d4', '#8b5cf6', '#64748b', '#eab308'];
+
+        const ctxIncome = document.getElementById('incomeChart').getContext('2d');
+        incomeChartInst = new Chart(ctxIncome, {
+            type: 'doughnut',
+            data: {
+                labels: incLabels,
+                datasets: [{
+                    data: incData,
+                    backgroundColor: incColors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12 } },
+                    title: { display: true, text: 'Income Breakdown', color: '#f8fafc', font: { size: 16 } }
+                }
+            }
+        });
+
+        // Render Expense Doughnut Chart
+        let catLabels = Object.keys(catTotals).sort((a,b) => catTotals[b] - catTotals[a]); // Sort highest first
+        let catData = catLabels.map(l => catTotals[l]);
+
+        const ctxCategory = document.getElementById('categoryChart').getContext('2d');
+        categoryChartInst = new Chart(ctxCategory, {
+            type: 'doughnut',
+            data: {
+                labels: catLabels,
+                datasets: [{
+                    data: catData,
+                    backgroundColor: chartColors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { color: '#94a3b8', boxWidth: 12 } },
+                    title: { display: true, text: 'Expense Breakdown', color: '#f8fafc', font: { size: 16 } }
+                }
+            }
         });
     }
 
@@ -633,12 +818,16 @@ include 'includes/header.php';
 
     function updateMultiDeleteUI() {
         const checked = document.querySelectorAll('.row-select-cb:checked');
-        const btn = document.getElementById('btn-delete-selected');
+        const btnDel = document.getElementById('btn-delete-selected');
+        const btnEdit = document.getElementById('btn-batch-edit');
         if (checked.length > 0) {
-            btn.style.display = 'inline-block';
-            btn.innerText = `🗑 Delete (${checked.length})`;
+            btnDel.style.display = 'inline-block';
+            btnDel.innerText = `🗑 Delete (${checked.length})`;
+            btnEdit.style.display = 'inline-block';
+            btnEdit.innerText = `✏️ Category (${checked.length})`;
         } else {
-            btn.style.display = 'none';
+            btnDel.style.display = 'none';
+            btnEdit.style.display = 'none';
         }
         const selectAllCb = document.getElementById('select-all-cb');
         if(selectAllCb) selectAllCb.checked = (checked.length > 0 && checked.length === document.querySelectorAll('.row-select-cb').length);
@@ -654,12 +843,55 @@ include 'includes/header.php';
         calculateAllTotals(); renderTable(); triggerSave(false); updateMultiDeleteUI();
     }
 
+    // --- Batch Edit Category Logic ---
+    function openBatchEditModal() {
+        const checked = document.querySelectorAll('.row-select-cb:checked');
+        if(checked.length === 0) return;
+        
+        document.getElementById('batch-edit-count').innerText = checked.length;
+        
+        let combinedOptions = [];
+        let cats = Object.keys(budgetData.categories || {});
+        let incs = Object.keys(budgetData.incomes || {});
+        cats.forEach(c => { if(!combinedOptions.includes(c)) combinedOptions.push(c); });
+        incs.forEach(i => { if(!combinedOptions.includes(i)) combinedOptions.push(i); });
+        combinedOptions.sort((a,b) => a.localeCompare(b));
+        
+        let selectHtml = '<option value="">-- Clear Category --</option>';
+        combinedOptions.forEach(opt => { selectHtml += `<option value="${opt}">${opt}</option>`; });
+        
+        document.getElementById('batchEditCategory').innerHTML = selectHtml;
+        document.getElementById('batchEditCategory').value = '';
+        document.getElementById('batchEditModal').style.display = 'flex';
+    }
+
+    function closeBatchEditModal() {
+        document.getElementById('batchEditModal').style.display = 'none';
+    }
+
+    function applyBatchEdit() {
+        const checked = document.querySelectorAll('.row-select-cb:checked');
+        const newCat = document.getElementById('batchEditCategory').value;
+        
+        let indices = Array.from(checked).map(cb => parseInt(cb.value));
+        indices.forEach(idx => {
+            if(ledgerData.months[currentTab][idx]) {
+                ledgerData.months[currentTab][idx].category = newCat;
+            }
+        });
+        
+        closeBatchEditModal();
+        calculateAllTotals();
+        renderTable();
+        triggerSave(false);
+        updateMultiDeleteUI();
+    }
+
     function addRow(index) {
         let newRow = {};
         ledgerData.columns.forEach(col => { 
             if(col.id !== 'total') {
-                if (col.id === 'method') newRow[col.id] = 'Cash/Debit';
-                else if (col.id === 'completed') newRow[col.id] = 'Scheduled';
+                if (col.id === 'completed') newRow[col.id] = 'Scheduled';
                 else newRow[col.id] = '';
             }
         });
@@ -678,6 +910,7 @@ include 'includes/header.php';
         ledgerData.annual_start = runningTotal;
 
         tabs.forEach(tab => {
+            if(tab === 'Review') return;
             monthStartBalances[tab] = runningTotal;
             if (ledgerData.months[tab]) {
                 ledgerData.months[tab].forEach(row => {
@@ -702,8 +935,7 @@ include 'includes/header.php';
                 let newRow = {};
                 ledgerData.columns.forEach(col => { 
                     if(col.id !== 'total') {
-                        if (col.id === 'method') newRow[col.id] = 'Cash/Debit';
-                        else if (col.id === 'completed') newRow[col.id] = 'Scheduled';
+                        if (col.id === 'completed') newRow[col.id] = 'Scheduled';
                         else newRow[col.id] = '';
                     }
                 });
@@ -718,7 +950,7 @@ include 'includes/header.php';
         const totalColors = ['bg-tot-1', 'bg-tot-2', 'bg-tot-3'];
         let colorIndex = 0;
 
-        // Combine categories and income streams into a single sorted list for the unified dropdown
+        // Combine only the main category group headers and incomes
         let combinedOptions = [];
         let cats = Object.keys(budgetData.categories || {});
         let incs = Object.keys(budgetData.incomes || {});
@@ -760,11 +992,6 @@ include 'includes/header.php';
                     combinedOptions.forEach(opt => { opts += `<option value="${opt}" ${trimStr(cellValue).toLowerCase() === trimStr(opt).toLowerCase() ? 'selected' : ''}>${opt}</option>`; });
                     if (cellValue && !combinedOptions.map(k=>trimStr(k).toLowerCase()).includes(trimStr(cellValue).toLowerCase())) opts += `<option value="${cellValue}" selected>${cellValue}</option>`;
                     html += `<td><select class="sheet-input" onchange="updateRow(${index}, '${col.id}', this.value)" style="${align}">${opts}</select></td>`;
-                } else if (col.id === 'method') {
-                    let methods = ['Cash/Debit', 'Credit Card'];
-                    let opts = '';
-                    methods.forEach(m => { opts += `<option value="${m}" ${trimStr(cellValue).toLowerCase() === trimStr(m).toLowerCase() ? 'selected' : ''}>${m}</option>`; });
-                    html += `<td><select class="sheet-input" onchange="updateRow(${index}, '${col.id}', this.value)" style="${align}">${opts}</select></td>`;
                 } else if (col.id === 'completed') {
                     let statuses = ['Scheduled', 'Requested', 'Complete'];
                     let opts = `<option value=""></option>`;
@@ -784,7 +1011,6 @@ include 'includes/header.php';
         if (mTotal) mTotal.innerText = finalTotal.toFixed(0);
         
         filterTable(document.getElementById('ledger-search').value);
-        updateBudgetHUD();
     }
 
     function updateTableVisuals() {
@@ -826,7 +1052,7 @@ include 'includes/header.php';
 
     function updateRow(index, field, value) {
         ledgerData.months[currentTab][index][field] = value;
-        if (field === 'amount' || field === 'item' || field === 'date' || field === 'category' || field === 'method' || field === 'completed') {
+        if (field === 'amount' || field === 'item' || field === 'date' || field === 'category' || field === 'completed') {
             calculateAllTotals();
             updateTableVisuals(); 
         }
