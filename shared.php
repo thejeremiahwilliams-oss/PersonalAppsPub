@@ -13,29 +13,42 @@ $db = new Database();
 $pdo = $db->getConnection();
 $data = null;
 
+// --- AUTO-HEAL: Ensure view_count column exists ---
+$tables_to_check = ['notes', 'kb_articles', 'tasks', 'meetings', 'budget_plans', 'yearly_ledgers'];
+foreach ($tables_to_check as $tbl) {
+    try {
+        $pdo->exec("ALTER TABLE {$tbl} ADD COLUMN view_count INT DEFAULT 0");
+    } catch (Exception $e) {}
+}
+
 try {
     if ($type === 'note') {
-        $stmt = $pdo->prepare("SELECT title, content, created_at, category, NULL as status FROM notes WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, title, content, created_at, category, NULL as status FROM notes WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($data) $pdo->exec("UPDATE notes SET view_count = view_count + 1 WHERE id = " . (int)$data['id']);
     } elseif ($type === 'kb') {
-        $stmt = $pdo->prepare("SELECT title, category, content, updated_at as created_at, NULL as status FROM kb_articles WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, title, category, content, updated_at as created_at, NULL as status FROM kb_articles WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($data) $pdo->exec("UPDATE kb_articles SET view_count = view_count + 1 WHERE id = " . (int)$data['id']);
     } elseif ($type === 'task') {
-        $stmt = $pdo->prepare("SELECT title, description as content, task_category as category, status, due_date as created_at FROM tasks WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, title, description as content, task_category as category, status, due_date as created_at FROM tasks WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($data) $pdo->exec("UPDATE tasks SET view_count = view_count + 1 WHERE id = " . (int)$data['id']);
     } elseif ($type === 'meeting') {
-        $stmt = $pdo->prepare("SELECT title, notes as content, meeting_date as created_at, NULL as category, NULL as status FROM meetings WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, title, notes as content, meeting_date as created_at, NULL as category, NULL as status FROM meetings WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($data) $pdo->exec("UPDATE meetings SET view_count = view_count + 1 WHERE id = " . (int)$data['id']);
     } elseif ($type === 'budget') {
-        $stmt = $pdo->prepare("SELECT budget_year, budget_month, budget_data, updated_at as created_at FROM budget_plans WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, budget_year, budget_month, budget_data, updated_at as created_at FROM budget_plans WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($row) {
+            $pdo->exec("UPDATE budget_plans SET view_count = view_count + 1 WHERE id = " . (int)$row['id']);
             $monthName = date("F", mktime(0, 0, 0, $row['budget_month'], 10));
             $data = [
                 'title' => "Budget Plan - {$monthName} {$row['budget_year']}",
@@ -69,7 +82,7 @@ try {
                     foreach($items as $i) {
                         $amt = (float)($i['amount'] ?? 0);
                         $expTotal += $amt;
-                        $expHtml .= "<li style='display:flex; justify-content:space-between; padding:8px; background:var(--bg-color); margin-bottom:5px; border-radius:6px; border:1px solid var(--border-color);'><span>" . htmlspecialchars($i['name']) . " <small style='color:var(--text-muted);'>(" . htmlspecialchars($i['method']) . ")</small></span><strong>$" . number_format($amt, 2) . "</strong></li>";
+                        $expHtml .= "<li style='display:flex; justify-content:space-between; padding:8px; background:var(--bg-color); margin-bottom:5px; border-radius:6px; border:1px solid var(--border-color);'><span>" . htmlspecialchars($i['name']) . "</span><strong>$" . number_format($amt, 2) . "</strong></li>";
                     }
                     $expHtml .= "</ul></div>";
                 }
@@ -82,7 +95,7 @@ try {
                     $ann_amt = (float)($sub['annual_amount'] ?? 0);
                     $mo_amt = $ann_amt / 12;
                     $expTotal += $mo_amt;
-                    $subsHtml .= "<li style='display:flex; justify-content:space-between; padding:8px; background:var(--bg-color); margin-bottom:5px; border-radius:6px; border:1px solid var(--border-color);'><span>" . htmlspecialchars($sub['name']) . " <small style='color:var(--text-muted);'>(" . htmlspecialchars($sub['method']) . ")</small></span><span><span style='color:var(--text-muted); font-size:0.85em; margin-right:10px;'>$" . number_format($ann_amt, 2) . "/yr</span><strong>$" . number_format($mo_amt, 2) . "/mo</strong></span></li>";
+                    $subsHtml .= "<li style='display:flex; justify-content:space-between; padding:8px; background:var(--bg-color); margin-bottom:5px; border-radius:6px; border:1px solid var(--border-color);'><span>" . htmlspecialchars($sub['name']) . "</span><span><span style='color:var(--text-muted); font-size:0.85em; margin-right:10px;'>$" . number_format($ann_amt, 2) . "/yr</span><strong>$" . number_format($mo_amt, 2) . "/mo</strong></span></li>";
                 }
                 $subsHtml .= "</ul>";
             }
@@ -109,11 +122,12 @@ try {
             $data['content'] = $summaryHtml . $incHtml . $expHtml . $subsHtml;
         }
     } elseif ($type === 'ledger') {
-        $stmt = $pdo->prepare("SELECT ledger_year, ledger_data, updated_at as created_at FROM yearly_ledgers WHERE share_token = :t");
+        $stmt = $pdo->prepare("SELECT id, ledger_year, ledger_data, updated_at as created_at FROM yearly_ledgers WHERE share_token = :t");
         $stmt->execute([':t' => $token]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($row) {
+            $pdo->exec("UPDATE yearly_ledgers SET view_count = view_count + 1 WHERE id = " . (int)$row['id']);
             $data = [
                 'title' => "Annual Ledger - {$row['ledger_year']}",
                 'created_at' => $row['created_at'],
@@ -135,7 +149,6 @@ try {
             if (!empty($lData['months'])) {
                 foreach(['Jan','Feb','Mar','Apr','May','June','July','Aug','Sept','Oct','Nov','Dec'] as $m) {
                     if (!empty($lData['months'][$m])) {
-                        // Filter out completely empty rows that have no amount or item
                         $validRows = array_filter($lData['months'][$m], function($r) {
                             return (!empty($r['item']) || (isset($r['amount']) && $r['amount'] !== ''));
                         });
@@ -143,7 +156,7 @@ try {
                         if (count($validRows) > 0) {
                             $contentHtml .= "<h3 style='color:var(--accent); border-bottom:1px solid var(--border-color); padding-bottom:5px;'>{$m} {$row['ledger_year']}</h3>";
                             $contentHtml .= "<div style='overflow-x:auto;'><table class='ledger-tbl'><thead><tr>
-                                <th>Date</th><th>Item</th><th>Category/Income</th><th>Method</th><th style='text-align:right;'>Amount</th><th style='text-align:right;'>Total</th>
+                                <th>Date</th><th>Item</th><th>Category/Income</th><th style='text-align:right;'>Amount</th><th style='text-align:right;'>Total</th>
                             </tr></thead><tbody>";
                             
                             foreach($validRows as $vr) {
@@ -158,7 +171,6 @@ try {
                                     <td>" . htmlspecialchars($vr['date'] ?? '') . "</td>
                                     <td><strong>" . htmlspecialchars($vr['item'] ?? '') . "</strong></td>
                                     <td>" . htmlspecialchars($vr['category'] ?? '') . "</td>
-                                    <td>" . htmlspecialchars($vr['method'] ?? '') . "</td>
                                     <td class='amt' style='color:{$amtColor};'>{$amtStr}</td>
                                     <td class='amt' style='font-weight:bold;'>{$totStr}</td>
                                 </tr>";

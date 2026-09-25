@@ -212,17 +212,15 @@ include 'includes/header.php';
     .fab-new-note { position: fixed; bottom: 30px; right: 30px; width: 60px; height: 60px; border-radius: 50%; background-color: var(--accent); color: white; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 100; cursor: pointer; border: none; transition: transform 0.2s; }
     .fab-new-note:active { transform: scale(0.95); }
 
-    /* ----------------------------------------------------
-       THE FIX: NATIVE SCROLL MODAL FOR MOBILE
-       ---------------------------------------------------- */
+    /* Mobile Modal - NATIVE SCROLL ARCHITECTURE */
     .modal-overlay { 
         position: fixed; inset: 0; background: var(--bg-color); 
         display: none; z-index: 1000; 
-        overflow-y: auto; /* Let the entire modal scroll natively! */
+        overflow-y: auto; 
         -webkit-overflow-scrolling: touch; 
     }
     .modal-content.notes-modal { 
-        width: 100%; min-height: 100%; /* Will grow as long as the text is */
+        width: 100%; min-height: 100%;
         margin: 0; border-radius: 0; display: flex; flex-direction: column; 
         background: var(--bg-color); border: none; 
     }
@@ -243,7 +241,7 @@ include 'includes/header.php';
     .action-icons button { background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-main); font-size: 1.1em; display: flex; align-items: center; justify-content: center; min-width: 38px; min-height: 38px; border-radius: 6px; cursor: pointer; }
     .action-icons button:active { background: rgba(255,255,255,0.1); }
 
-    /* Sticky Quill Toolbar (Stays at top while scrolling down) */
+    /* Sticky Quill Toolbar */
     .ql-toolbar.ql-snow { 
         position: sticky; top: 0; z-index: 50; 
         background-color: var(--card-bg); border: none !important; 
@@ -254,8 +252,8 @@ include 'includes/header.php';
     .ql-toolbar.ql-snow .ql-formats { display: inline-block; margin-right: 15px; margin-bottom: 0; }
 
     /* Auto-expanding editor */
-    .ql-container.ql-snow { border: none !important; background-color: var(--bg-color); font-size: 16px; height: auto; padding-bottom: 50vh; /* Extra padding so keyboard never hides bottom lines */ }
-    .ql-editor { color: var(--text-main) !important; padding: 15px; overflow-y: visible; /* CRITICAL for native scroll */ }
+    .ql-container.ql-snow { border: none !important; background-color: var(--bg-color); font-size: 16px; height: auto; padding-bottom: 50vh; }
+    .ql-editor { color: var(--text-main) !important; padding: 15px; overflow-y: visible; }
     .ql-editor.ql-blank::before { color: var(--text-muted) !important; font-style: normal; opacity: 0.7; left: 15px; }
     .ql-snow .ql-stroke { stroke: var(--text-main) !important; }
     .ql-snow .ql-fill { fill: var(--text-main) !important; }
@@ -271,18 +269,41 @@ include 'includes/header.php';
         .notes-filter { width: auto; min-width: 200px; }
         .notes-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); padding-bottom: 0; }
         
-        .modal-overlay { background: rgba(0,0,0,0.6); padding: 40px 20px; align-items: center; }
-        .modal-content.notes-modal { max-width: 900px; min-height: auto; max-height: 85vh; margin: auto; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+        /* Fixed Desktop Modal Dimensions */
+        .modal-overlay { background: rgba(0,0,0,0.6); padding: 40px 20px; align-items: center; justify-content: center; }
+        .modal-content.notes-modal { 
+            width: 100%; max-width: 900px; 
+            height: 85vh; min-height: 500px; 
+            margin: auto; border-radius: 12px; 
+            border: 1px solid var(--border-color); 
+            overflow: hidden; display: flex; flex-direction: column; 
+        }
         
-        .modal-header-flex { flex-direction: row; align-items: center; padding: 20px 25px; gap: 20px; }
+        .modal-header-flex { flex-direction: row; align-items: center; padding: 20px 25px; gap: 20px; flex-shrink: 0; }
         .modal-header-top { width: auto; flex-grow: 1; }
+        .modal-actions-row { display: flex; justify-content: space-between; align-items: center; gap: 15px; flex-grow: 0; }
+        
         #editor-title { font-size: 1.6em; }
         #editor-category { max-width: 200px; }
         
-        .ql-toolbar.ql-snow { position: static; border: 1px solid var(--border-color) !important; border-top-left-radius: 8px; border-top-right-radius: 8px; white-space: normal; display: block; overflow-x: visible; margin: 20px 20px 0 20px; }
+        /* Flexbox growth for Editor on Desktop */
+        .ql-toolbar.ql-snow { 
+            position: static; border: 1px solid var(--border-color) !important; 
+            border-top-left-radius: 8px; border-top-right-radius: 8px; 
+            white-space: normal; display: block; overflow-x: visible; 
+            margin: 20px 20px 0 20px; flex-shrink: 0;
+        }
         .ql-toolbar.ql-snow .ql-formats { margin-bottom: 8px; }
-        .ql-container.ql-snow { border: 1px solid var(--border-color) !important; border-top: none !important; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; margin: 0 20px 20px 20px; background-color: var(--card-bg); flex-grow: 1; height: 0; padding-bottom: 0; display: flex; flex-direction: column; }
-        .ql-editor { overflow-y: auto; min-height: 350px; padding-bottom: 20px; }
+        .ql-container.ql-snow { 
+            border: 1px solid var(--border-color) !important; border-top: none !important; 
+            border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; 
+            margin: 0 20px 20px 20px; background-color: var(--card-bg); 
+            flex: 1 1 auto; height: auto; min-height: 0; padding-bottom: 0; 
+            display: flex; flex-direction: column; 
+        }
+        .ql-editor { 
+            overflow-y: auto; height: 100%; padding-bottom: 20px; 
+        }
     }
     
     .desktop-new-btn { display: none; }
@@ -445,7 +466,7 @@ include 'includes/header.php';
     }
 
     // Attach listeners for Auto-Save
-    quill.on('text-change', () => { if(document.getElementById('note-modal-overlay').style.display === 'flex') triggerAutoSave(); });
+    quill.on('text-change', () => { if(document.getElementById('note-modal-overlay').style.display === 'flex' || document.getElementById('note-modal-overlay').style.display === 'block') triggerAutoSave(); });
     document.getElementById('editor-title').addEventListener('input', triggerAutoSave);
     document.getElementById('editor-category').addEventListener('change', triggerAutoSave);
 

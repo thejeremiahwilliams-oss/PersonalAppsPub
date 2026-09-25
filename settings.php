@@ -105,32 +105,32 @@ $current_email_notifs = $user_settings['email_notifications'] ?? 0;
 $shared_links = [];
 try {
     // Notes
-    $stmt = $pdo->prepare("SELECT id, title, 'note' as type, share_token, created_at FROM notes WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, title, 'note' as type, share_token, COALESCE(view_count, 0) as view_count, created_at FROM notes WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
     // KB Articles (Checking author_id)
-    $stmt = $pdo->prepare("SELECT id, title, 'kb' as type, share_token, updated_at as created_at FROM kb_articles WHERE author_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, title, 'kb' as type, share_token, COALESCE(view_count, 0) as view_count, updated_at as created_at FROM kb_articles WHERE author_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
     // Tasks
-    $stmt = $pdo->prepare("SELECT id, title, 'task' as type, share_token, created_at FROM tasks WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, title, 'task' as type, share_token, COALESCE(view_count, 0) as view_count, created_at FROM tasks WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     // Meetings
-    $stmt = $pdo->prepare("SELECT id, title, 'meeting' as type, share_token, created_at FROM meetings WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, title, 'meeting' as type, share_token, COALESCE(view_count, 0) as view_count, created_at FROM meetings WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
     // Budget
-    $stmt = $pdo->prepare("SELECT id, CONCAT('Budget Plan - ', budget_month, '/', budget_year) as title, 'budget' as type, share_token, updated_at as created_at FROM budget_plans WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, CONCAT('Budget Plan - ', budget_month, '/', budget_year) as title, 'budget' as type, share_token, COALESCE(view_count, 0) as view_count, updated_at as created_at FROM budget_plans WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
     // Ledger
-    $stmt = $pdo->prepare("SELECT id, CONCAT('Annual Ledger - ', ledger_year) as title, 'ledger' as type, share_token, updated_at as created_at FROM yearly_ledgers WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
+    $stmt = $pdo->prepare("SELECT id, CONCAT('Annual Ledger - ', ledger_year) as title, 'ledger' as type, share_token, COALESCE(view_count, 0) as view_count, updated_at as created_at FROM yearly_ledgers WHERE user_id = :uid AND share_token IS NOT NULL AND share_token != ''");
     $stmt->execute([':uid' => $user_id]);
     $shared_links = array_merge($shared_links, $stmt->fetchAll(PDO::FETCH_ASSOC));
     
@@ -158,6 +158,8 @@ include 'includes/header.php';
     
     .share-link-url { color: var(--accent); text-decoration: none; word-break: break-all; font-weight: 500; }
     .share-link-url:hover { text-decoration: underline; }
+    
+    .view-count { display: inline-flex; align-items: center; gap: 4px; background: var(--bg-color); border: 1px solid var(--border-color); padding: 3px 8px; border-radius: 20px; font-size: 0.8em; color: var(--text-muted); font-weight: bold; }
 
     /* Responsive Table Settings */
     @media (max-width: 768px) {
@@ -262,8 +264,9 @@ include 'includes/header.php';
                         <tr>
                             <th style="width: 35%;">Item Title</th>
                             <th style="width: 15%;">Type</th>
+                            <th style="width: 10%;">Views</th>
                             <th style="width: 25%;">Link</th>
-                            <th style="width: 25%; text-align: right;">Action</th>
+                            <th style="width: 15%; text-align: right;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -280,6 +283,9 @@ include 'includes/header.php';
                             </td>
                             <td data-label="Type">
                                 <span class="type-badge <?= $badge_class ?>"><?= htmlspecialchars($link['type']) ?></span>
+                            </td>
+                            <td data-label="Views">
+                                <span class="view-count" title="Number of times this link was opened">👁️ <?= (int)$link['view_count'] ?></span>
                             </td>
                             <td data-label="Link">
                                 <a href="<?= $full_url ?>" target="_blank" class="share-link-url" title="Open Link">View ↗</a>
