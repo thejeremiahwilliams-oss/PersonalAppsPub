@@ -126,6 +126,7 @@ if (isset($_GET['api'])) {
             $defaultColumns = [
                 ['id' => 'date', 'name' => 'DATE', 'width' => '130px'],
                 ['id' => 'item', 'name' => 'ITEM', 'width' => '150px'],
+                ['id' => 'method', 'name' => 'ACCOUNT', 'width' => '120px'],
                 ['id' => 'category', 'name' => 'CATEGORY / INCOME', 'width' => '160px'],
                 ['id' => 'desc', 'name' => 'DESCRIPTION', 'width' => '140px'],
                 ['id' => 'amount', 'name' => 'AMOUNT', 'width' => '100px'],
@@ -133,10 +134,10 @@ if (isset($_GET['api'])) {
                 ['id' => 'completed', 'name' => 'STATUS', 'width' => '110px']
             ];
             $months = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
-            $emptyData = ['annual_start' => 0, 'columns' => $defaultColumns, 'months' => []];
+            $emptyData = ['checking_start' => 0, 'cc_start' => 0, 'columns' => $defaultColumns, 'months' => []];
             foreach ($months as $m) {
                 $emptyRows = [];
-                for($i=0; $i<30; $i++) { $emptyRows[] = ["date"=>"", "item"=>"", "category"=>"", "desc"=>"", "amount"=>"", "total"=>"", "completed"=>""]; }
+                for($i=0; $i<30; $i++) { $emptyRows[] = ["date"=>"", "item"=>"", "method"=>"Checking", "category"=>"", "desc"=>"", "amount"=>"", "total"=>"", "completed"=>""]; }
                 $emptyData['months'][$m] = $emptyRows;
             }
             echo json_encode($emptyData);
@@ -169,7 +170,6 @@ if (isset($_GET['api'])) {
             $stmt_ins = $pdo->prepare("INSERT INTO ledger_history (user_id, ledger_year, ledger_data) VALUES (:uid, :year, :data)");
             $stmt_ins->execute([':uid' => $user_id, ':year' => $year, ':data' => $data]);
             
-            // Trim to the last 24 records
             $stmt_count = $pdo->prepare("SELECT COUNT(*) FROM ledger_history WHERE user_id = :uid AND ledger_year = :year");
             $stmt_count->execute([':uid' => $user_id, ':year' => $year]);
             if ($stmt_count->fetchColumn() > 24) {
@@ -192,7 +192,8 @@ if (isset($_GET['api'])) {
 
         if ($row && !empty($row['ledger_data'])) {
             $data = json_decode($row['ledger_data'], true);
-            $data['annual_start'] = 0;
+            $data['checking_start'] = 0;
+            $data['cc_start'] = 0;
             if (isset($data['months'])) {
                 foreach ($data['months'] as $month => &$rows) {
                     foreach ($rows as &$r) {
@@ -255,7 +256,6 @@ if (isset($_GET['api'])) {
 
     if ($_GET['api'] === 'history_list') {
         $year = (int)$_GET['year'];
-        // Fetch up to 24 records
         $stmt = $pdo->prepare("SELECT id, created_at FROM ledger_history WHERE user_id = :uid AND ledger_year = :year ORDER BY id DESC LIMIT 24");
         $stmt->execute([':uid' => $user_id, ':year' => $year]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
@@ -283,9 +283,6 @@ include 'includes/header.php';
         --sheet-open: rgba(59, 130, 246, 0.2);
         --sheet-neg: rgba(239, 68, 68, 0.2);
         --sheet-pos: rgba(34, 197, 94, 0.2);
-        --sheet-tot1: rgba(34, 197, 94, 0.1);
-        --sheet-tot2: rgba(234, 179, 8, 0.1);
-        --sheet-tot3: rgba(168, 85, 247, 0.1);
         --sheet-header: var(--accent);
         --sheet-header-text: #ffffff;
         --sheet-total-box: rgba(168, 85, 247, 0.2);
@@ -296,9 +293,6 @@ include 'includes/header.php';
         --sheet-open: #a4c2f4;
         --sheet-neg: #ea9999;
         --sheet-pos: #b6d7a8;
-        --sheet-tot1: #b6d7a8;
-        --sheet-tot2: #fce5cd;
-        --sheet-tot3: #fff2cc;
         --sheet-header: #4a86e8;
         --sheet-header-text: #000000;
         --sheet-total-box: #8e7cc3;
@@ -314,7 +308,7 @@ include 'includes/header.php';
     #save-status.visible { opacity: 1; }
     
     .toolbar-stats { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .global-total-box { background: var(--sheet-total-box); border: 1px solid var(--sheet-border-heavy); padding: 0; display: flex; flex-direction: column; text-align: right; min-width: 110px; border-radius: 4px; overflow: hidden; }
+    .global-total-box { background: var(--sheet-total-box); border: 1px solid var(--sheet-border-heavy); padding: 0; display: flex; flex-direction: column; text-align: right; min-width: 100px; border-radius: 4px; overflow: hidden; }
     .global-total-box .title { border-bottom: 1px solid var(--sheet-border-heavy); font-weight: bold; padding: 3px 6px; font-size: 11px; text-align: left; color: var(--text-main); }
     .global-total-box .val { padding: 4px 6px; font-weight: bold; font-size: 14px; color: var(--text-main); }
 
@@ -345,9 +339,7 @@ include 'includes/header.php';
     .bg-open { background-color: var(--sheet-open) !important; }
     .bg-neg { background-color: var(--sheet-neg) !important; }
     .bg-pos { background-color: var(--sheet-pos) !important; }
-    .bg-tot-1 { background-color: var(--sheet-tot1) !important; } 
-    .bg-tot-2 { background-color: var(--sheet-tot2) !important; } 
-    .bg-tot-3 { background-color: var(--sheet-tot3) !important; } 
+    .bg-tot-net { background-color: rgba(168, 85, 247, 0.1) !important; } 
 
     .action-btn { background: transparent; border: none; font-size: 14px; font-weight: bold; color: var(--text-muted); cursor: pointer; padding: 0 6px; transition: 0.2s; outline: none; }
     .action-btn:hover { color: var(--accent); }
@@ -393,7 +385,7 @@ include 'includes/header.php';
             <button onclick="openHistoryModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--accent); border: 1px solid var(--accent);" title="View Database Version History">🕒 History</button>
             <button onclick="openSettingsModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);" title="Ledger Settings & Danger Zone">⚙️ Settings</button>
             
-            <button onclick="openAutoFillModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid #a855f7; font-weight: bold; margin-left: 10px;">🪄 Auto-Fill</button>
+            <button onclick="openAutoFillModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: rgba(168, 85, 247, 0.1); color: #a855f7; font-weight: bold; margin-left: 10px;">🪄 Auto-Fill</button>
             
             <button onclick="openSetDateModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);">📅 Set Dates</button>
             <button onclick="openSetStatusModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);">✅ Set Status</button>
@@ -414,16 +406,26 @@ include 'includes/header.php';
     
     <div class="toolbar-stats" id="standard-stats">
         <div style="display:flex; align-items:center; gap:6px; color:var(--text-main); font-size: 13px;">
-            <strong>Start:</strong>
-            <input type="number" id="annual-start-balance" value="0" onchange="pushState(); triggerSave(true)" style="padding:4px; width:90px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;">
+            <strong>CHK Start:</strong>
+            <input type="number" id="chk-start" value="0" onchange="pushState(); triggerSave(true)" style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;">
+            <strong style="margin-left:5px;">CC Start:</strong>
+            <input type="number" id="cc-start" value="0" onchange="pushState(); triggerSave(true)" style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;" title="Enter CC debt as a negative number">
         </div>
-        <div class="global-total-box">
-            <div class="title" id="month-total-title">MONTH TOTAL</div>
+        <div class="global-total-box" style="margin-left: auto;">
+            <div class="title" id="month-total-title">MONTH NET</div>
             <div class="val" id="month-total-cell">0</div>
         </div>
-        <div class="global-total-box">
-            <div class="title">YEAR END</div>
-            <div class="val" id="annual-end-total">0</div>
+        <div class="global-total-box" style="background: rgba(34, 197, 94, 0.1);">
+            <div class="title">CHK END</div>
+            <div class="val" id="chk-end" style="color: #22c55e;">0</div>
+        </div>
+        <div class="global-total-box" style="background: rgba(239, 68, 68, 0.1);">
+            <div class="title">CC END</div>
+            <div class="val" id="cc-end" style="color: #ef4444;">0</div>
+        </div>
+        <div class="global-total-box" style="background: rgba(59, 130, 246, 0.1);">
+            <div class="title">NET TOTAL</div>
+            <div class="val" id="annual-end-total" style="color: #3b82f6;">0</div>
         </div>
     </div>
 </div>
@@ -608,6 +610,7 @@ include 'includes/header.php';
     const defaultColumns = [
         { id: 'date', name: 'DATE', width: '130px' },
         { id: 'item', name: 'ITEM', width: '150px' },
+        { id: 'method', name: 'ACCOUNT', width: '120px' },
         { id: 'category', name: 'CATEGORY / INCOME', width: '160px' },
         { id: 'desc', name: 'DESCRIPTION', width: '140px' },
         { id: 'amount', name: 'AMOUNT', width: '100px' },
@@ -615,7 +618,7 @@ include 'includes/header.php';
         { id: 'completed', name: 'STATUS', width: '110px' }
     ];
 
-    let ledgerData = { annual_start: 0, columns: [], months: {} };
+    let ledgerData = { checking_start: 0, cc_start: 0, columns: [], months: {} };
     let monthStartBalances = {}; 
     let budgetData = { categories: {}, incomes: {} };
     let saveTimeout = null;
@@ -640,6 +643,10 @@ include 'includes/header.php';
         tabs.forEach(m => {
             if (m !== 'Review' && m !== 'All' && ledgerData.months[m]) {
                 ledgerData.months[m].sort((a, b) => {
+                    if (!a && !b) return 0;
+                    if (!a) return 1;
+                    if (!b) return -1;
+                    
                     let isEmptyA = (!a.item && !a.amount && !a.date && !a.desc && !a.category && (!a.completed || a.completed==='Scheduled'));
                     let isEmptyB = (!b.item && !b.amount && !b.date && !b.desc && !b.category && (!b.completed || b.completed==='Scheduled'));
                     if (isEmptyA && !isEmptyB) return 1;
@@ -705,6 +712,7 @@ include 'includes/header.php';
         } else {
             let rows = ledgerData.months[currentTab] || [];
             rows.forEach(row => {
+                if (!row) return;
                 let hasData = (row.item && String(row.item).trim() !== '') || (row.amount && String(row.amount).trim() !== '') || (row.desc && String(row.desc).trim() !== '');
                 let hasDate = (row.date && String(row.date).trim() !== '');
 
@@ -774,6 +782,7 @@ include 'includes/header.php';
         } else {
             let rows = ledgerData.months[currentTab] || [];
             rows.forEach(row => {
+                if (!row) return;
                 let hasData = (row.item && String(row.item).trim() !== '') || (row.amount && String(row.amount).trim() !== '') || (row.desc && String(row.desc).trim() !== '');
                 let hasStatus = (row.completed && String(row.completed).trim() !== '');
 
@@ -845,7 +854,8 @@ include 'includes/header.php';
 
     function loadStateFromStack(stateStr) {
         ledgerData = processLedgerSchema(stateStr);
-        document.getElementById('annual-start-balance').value = ledgerData.annual_start || 0;
+        if(document.getElementById('chk-start')) document.getElementById('chk-start').value = ledgerData.checking_start || 0;
+        if(document.getElementById('cc-start')) document.getElementById('cc-start').value = ledgerData.cc_start || 0;
         calculateAllTotals();
         if (currentTab === 'Review') renderAnnualReview();
         else { renderHeaders(); renderTable(); }
@@ -859,16 +869,31 @@ include 'includes/header.php';
             try { data = JSON.parse(data); } catch(e) { break; }
             parseAttempts++;
         }
-        if (!data || typeof data !== 'object' || Array.isArray(data)) { data = { annual_start: 0, columns: [], months: {} }; }
+        if (!data || typeof data !== 'object' || Array.isArray(data)) { data = { checking_start: 0, cc_start: 0, columns: [], months: {} }; }
+        
+        if (data.annual_start !== undefined && data.checking_start === undefined) {
+            data.checking_start = data.annual_start;
+            data.cc_start = 0;
+            delete data.annual_start;
+        }
+        if (data.checking_start === undefined) data.checking_start = 0;
+        if (data.cc_start === undefined) data.cc_start = 0;
+
         if (!data.months || typeof data.months !== 'object') data.months = {};
         if (!data.columns || !Array.isArray(data.columns) || data.columns.length === 0) {
             data.columns = JSON.parse(JSON.stringify(defaultColumns));
         }
         
-        data.columns = data.columns.filter(c => c && c.id !== 'income_source' && c.id !== 'method' && c.id !== 'check');
-        if (!data.columns.find(c => c && c.id === 'category')) {
+        data.columns = data.columns.filter(c => c && c.id !== 'income_source' && c.id !== 'check');
+        
+        if (!data.columns.find(c => c && c.id === 'method')) {
             let itemIndex = data.columns.findIndex(c => c && c.id === 'item');
             if(itemIndex === -1) itemIndex = 0;
+            data.columns.splice(itemIndex + 1, 0, { id: 'method', name: 'ACCOUNT', width: '120px' });
+        }
+        if (!data.columns.find(c => c && c.id === 'category')) {
+            let itemIndex = data.columns.findIndex(c => c && c.id === 'method');
+            if(itemIndex === -1) itemIndex = 1;
             data.columns.splice(itemIndex + 1, 0, { id: 'category', name: 'CATEGORY / INCOME', width: '160px' });
         } else {
             let catCol = data.columns.find(c => c && c.id === 'category');
@@ -923,6 +948,10 @@ include 'includes/header.php';
 
         if (Array.isArray(rows)) {
             rows.forEach(row => {
+                if (!row) return;
+                // IGNORE CREDIT CARD PAYMENTS IN BUDGET
+                if (row.category === '💳 CC Payment') return;
+
                 let rawCat = trimStr(row.category).toLowerCase();
                 let amt = parseFloat(row.amount);
                 
@@ -1005,7 +1034,8 @@ include 'includes/header.php';
                 
                 forceSortAllMonthsByDate();
                 
-                document.getElementById('annual-start-balance').value = ledgerData.annual_start || 0;
+                if(document.getElementById('chk-start')) document.getElementById('chk-start').value = ledgerData.checking_start || 0;
+                if(document.getElementById('cc-start')) document.getElementById('cc-start').value = ledgerData.cc_start || 0;
                 calculateAllTotals();
                 
                 historyStack = [JSON.stringify(ledgerData)];
@@ -1013,21 +1043,20 @@ include 'includes/header.php';
                 updateUndoRedoUI();
                 
                 if(currentTab === 'Review') {
-                    document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
+                    if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
                     renderAnnualReview();
                 } else if (currentTab === 'All') {
-                    document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
+                    if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
                     renderHeaders();
                     renderTable();
                     updateBudgetHUD();
                 } else {
-                    document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
+                    if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' NET';
                     fetchBudgetData().then(() => {
                         renderHeaders();
                         renderTable();
                         updateBudgetHUD();
                     }).catch(err => {
-                        console.error("Budget Fetch Error:", err);
                         renderHeaders();
                         renderTable();
                     });
@@ -1055,7 +1084,7 @@ include 'includes/header.php';
             document.getElementById('spreadsheet-view').style.display = 'block';
             document.getElementById('standard-toolbar').style.display = 'flex';
             document.getElementById('standard-stats').style.display = 'flex';
-            document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
+            if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
             renderHeaders();
             renderTable();
             updateBudgetHUD();
@@ -1064,10 +1093,14 @@ include 'includes/header.php';
             document.getElementById('spreadsheet-view').style.display = 'block';
             document.getElementById('standard-toolbar').style.display = 'flex';
             document.getElementById('standard-stats').style.display = 'flex';
-            document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' TOTAL';
+            if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' NET';
             
             if (ledgerData.months[currentTab]) {
                 ledgerData.months[currentTab].sort((a, b) => {
+                    if (!a && !b) return 0;
+                    if (!a) return 1;
+                    if (!b) return -1;
+                    
                     let isEmptyA = (!a.item && !a.amount && !a.date && !a.desc && !a.category && (!a.completed || a.completed==='Scheduled'));
                     let isEmptyB = (!b.item && !b.amount && !b.date && !b.desc && !b.category && (!b.completed || b.completed==='Scheduled'));
                     if (isEmptyA && !isEmptyB) return 1;
@@ -1096,6 +1129,8 @@ include 'includes/header.php';
             let mInc = 0; let mExp = 0;
             if(ledgerData.months[m] && Array.isArray(ledgerData.months[m])) {
                 ledgerData.months[m].forEach(row => {
+                    if (!row) return;
+                    if (row.category === '💳 CC Payment') return; // Ignore CC payments in review charts
                     let amt = parseFloat(row.amount);
                     if(!isNaN(amt)) {
                         if(amt > 0) {
@@ -1192,8 +1227,10 @@ include 'includes/header.php';
         
         pushState();
         closeSettingsModal();
-        ledgerData.annual_start = 0;
-        document.getElementById('annual-start-balance').value = 0;
+        ledgerData.checking_start = 0;
+        ledgerData.cc_start = 0;
+        if(document.getElementById('chk-start')) document.getElementById('chk-start').value = 0;
+        if(document.getElementById('cc-start')) document.getElementById('cc-start').value = 0;
         
         tabs.forEach(m => {
             if (m !== 'Review' && m !== 'All') {
@@ -1201,7 +1238,9 @@ include 'includes/header.php';
                 for(let i=0; i<30; i++) {
                     let newRow = {};
                     ledgerData.columns.forEach(col => { 
-                        if(col.id !== 'total') { newRow[col.id] = (col.id === 'completed') ? 'Scheduled' : ''; }
+                        if(col.id === 'method') newRow[col.id] = 'Checking';
+                        else if(col.id === 'completed') newRow[col.id] = 'Scheduled';
+                        else if(col.id !== 'total') newRow[col.id] = ''; 
                     });
                     emptyRows.push(newRow);
                 }
@@ -1310,7 +1349,8 @@ include 'includes/header.php';
                 pushState();
                 closeHistoryModal();
                 ledgerData = processLedgerSchema(text);
-                document.getElementById('annual-start-balance').value = ledgerData.annual_start || 0;
+                if(document.getElementById('chk-start')) document.getElementById('chk-start').value = ledgerData.checking_start || 0;
+                if(document.getElementById('cc-start')) document.getElementById('cc-start').value = ledgerData.cc_start || 0;
                 calculateAllTotals();
                 if (currentTab === 'Review') renderAnnualReview();
                 else { renderHeaders(); renderTable(); }
@@ -1361,6 +1401,7 @@ include 'includes/header.php';
         monthsToExport.forEach(m => {
             if (!ledgerData.months[m]) return;
             ledgerData.months[m].forEach(row => {
+                if (!row) return;
                 if ((!row.item || row.item.trim() === '') && (!row.amount || row.amount === '')) return;
                 let rowData = ledgerData.columns.map(col => {
                     let val = row[col.id] || "";
@@ -1437,6 +1478,9 @@ include 'includes/header.php';
                     else if (headerText.includes('AMOUNT') || headerText.includes('VALUE') || headerText.includes('COST')) {
                         if (!colMap.includes('amount')) colMap[i] = 'amount';
                     }
+                    else if (headerText.includes('ACCOUNT') || headerText.includes('METHOD') || headerText.includes('CARD') || headerText.includes('SOURCE')) {
+                        if (!colMap.includes('method')) colMap[i] = 'method';
+                    }
                     else if (headerText.includes('DEBIT')) colMap[i] = 'debit_fallback';
                     else if (headerText.includes('CREDIT')) colMap[i] = 'credit_fallback';
                     else if (headerText.includes('CAT') || headerText.includes('TYPE') || headerText.includes('GROUP')) colMap[i] = 'category';
@@ -1458,7 +1502,7 @@ include 'includes/header.php';
                 let cols = parseCSVLine(line);
                 if (cols.length > 0) {
                     let newRow = {};
-                    ledgerData.columns.forEach(c => newRow[c.id] = '');
+                    ledgerData.columns.forEach(c => newRow[c.id] = (c.id === 'method' ? 'Checking' : ''));
                     let tempDebit = null; let tempCredit = null;
 
                     cols.forEach((val, idx) => {
@@ -1487,6 +1531,7 @@ include 'includes/header.php';
                     }
 
                     if (!newRow.item && newRow.desc) { newRow.item = newRow.desc; newRow.desc = ''; }
+                    if (!newRow.method) newRow.method = 'Checking';
                     if (newRow.item || newRow.amount || newRow.desc) importedRows.push(newRow);
                 }
             }
@@ -1553,12 +1598,12 @@ include 'includes/header.php';
         if (source === 'budget') {
             if (budgetData && budgetData.incomes) {
                 for (const [incName, amt] of Object.entries(budgetData.incomes)) {
-                    itemsToAdd.push({ item: incName, category: incName, amount: Math.abs(parseFloat(amt) || 0) });
+                    itemsToAdd.push({ item: incName, method: 'Checking', category: incName, amount: Math.abs(parseFloat(amt) || 0) });
                 }
             }
             if (budgetData && budgetData.categories) {
                 for (const [catName, amt] of Object.entries(budgetData.categories)) {
-                    itemsToAdd.push({ item: catName, category: catName, amount: -Math.abs(parseFloat(amt) || 0) });
+                    itemsToAdd.push({ item: catName, method: 'Checking', category: catName, amount: -Math.abs(parseFloat(amt) || 0) });
                 }
             }
         } else {
@@ -1580,7 +1625,7 @@ include 'includes/header.php';
                         if (match) { name = match[1].trim(); amount = parseFloat(match[2].replace(/[^0-9.-]+/g,"")) || 0; }
                     }
                 }
-                itemsToAdd.push({ item: name, category: '', amount: amount });
+                itemsToAdd.push({ item: name, method: 'Checking', category: '', amount: amount });
             });
         }
         
@@ -1601,6 +1646,7 @@ include 'includes/header.php';
                 ledgerData.columns.forEach(col => {
                     if (col.id === 'item') rowObj[col.id] = newItem.item;
                     else if (col.id === 'amount') rowObj[col.id] = newItem.amount;
+                    else if (col.id === 'method') rowObj[col.id] = newItem.method;
                     else if (col.id === 'category') rowObj[col.id] = newItem.category;
                     else if (col.id === 'completed') rowObj[col.id] = 'Scheduled';
                     else rowObj[col.id] = '';
@@ -1635,7 +1681,10 @@ include 'includes/header.php';
         pushState(); 
 
         ledgerData.months[currentTab].sort((a, b) => {
-            let valA = a[colId] || ''; let valB = b[colId] || '';
+            if (!a && !b) return 0;
+            if (!a) return 1;
+            if (!b) return -1;
+
             let isEmptyA = (!a.item && !a.amount && !a.date && !a.desc && !a.category && (!a.completed || a.completed==='Scheduled'));
             let isEmptyB = (!b.item && !b.amount && !b.date && !b.desc && !b.category && (!b.completed || b.completed==='Scheduled'));
             if (isEmptyA && !isEmptyB) return 1;
@@ -1647,9 +1696,11 @@ include 'includes/header.php';
                 return asc ? numA - numB : numB - numA;
             }
             if (colId === 'date') {
-                valA = valA.trim() !== '' ? valA : (asc ? "9999-99-99" : "0000-00-00");
-                valB = valB.trim() !== '' ? valB : (asc ? "9999-99-99" : "0000-00-00");
+                let valA = a.date && String(a.date).trim() !== '' ? String(a.date) : "9999-99-99";
+                let valB = b.date && String(b.date).trim() !== '' ? String(b.date) : "9999-99-99";
+                return asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
             }
+            let valA = a[colId] || ''; let valB = b[colId] || '';
             return asc ? String(valA).localeCompare(String(valB)) : String(valB).localeCompare(String(valA));
         });
         
@@ -1684,8 +1735,8 @@ include 'includes/header.php';
 
     async function removeColumn(index) {
         const col = ledgerData.columns[index];
-        if (col.id === 'amount' || col.id === 'total') {
-            if(!(await appConfirm("Warning: Deleting Amount or Total columns disables math. Are you sure?"))) return;
+        if (col.id === 'amount' || col.id === 'total' || col.id === 'method') {
+            if(!(await appConfirm(`Warning: Deleting the ${col.name} column may disable math or tracking features. Are you sure?`))) return;
         } else {
             if(!(await appConfirm(`Delete the ${col.name} column? Data will be lost.`))) return;
         }
@@ -1742,7 +1793,7 @@ include 'includes/header.php';
         
         document.getElementById('batch-edit-count').innerText = checked.length;
         
-        let combinedOptions = [];
+        let combinedOptions = ['💳 CC Payment'];
         let cats = Object.keys(budgetData.categories || {});
         let incs = Object.keys(budgetData.incomes || {});
         cats.forEach(c => { if(!combinedOptions.includes(c)) combinedOptions.push(c); });
@@ -1777,7 +1828,9 @@ include 'includes/header.php';
         pushState(); 
         let newRow = {};
         ledgerData.columns.forEach(col => { 
-            if(col.id !== 'total') {
+            if(col.id === 'method') {
+                newRow[col.id] = 'Checking';
+            } else if(col.id !== 'total') {
                 if (col.id === 'completed') newRow[col.id] = 'Scheduled'; else newRow[col.id] = '';
             }
         });
@@ -1793,22 +1846,38 @@ include 'includes/header.php';
     }
 
     function calculateAllTotals() {
-        let runningTotal = parseFloat(document.getElementById('annual-start-balance').value) || 0;
-        ledgerData.annual_start = runningTotal;
+        let chk = 0; let cc = 0;
+        if (document.getElementById('chk-start')) chk = parseFloat(document.getElementById('chk-start').value) || 0;
+        if (document.getElementById('cc-start')) cc = parseFloat(document.getElementById('cc-start').value) || 0;
+        
+        ledgerData.checking_start = chk;
+        ledgerData.cc_start = cc;
 
         tabs.forEach(tab => {
             if(tab === 'Review' || tab === 'All') return;
-            monthStartBalances[tab] = runningTotal;
+            monthStartBalances[tab] = { chk: chk, cc: cc };
             if (ledgerData.months[tab] && Array.isArray(ledgerData.months[tab])) {
                 ledgerData.months[tab].forEach(row => {
+                    if (!row) return;
                     let amount = parseFloat(row.amount);
                     if (!isNaN(amount) && row.amount !== "") {
-                        runningTotal += amount;
+                        let isCCPayment = (row.category === '💳 CC Payment');
+                        if (row.method === 'Credit Card') {
+                            if (isCCPayment) { cc += amount; } 
+                            else { cc += amount; }
+                        } else {
+                            chk += amount;
+                            if (isCCPayment) { cc -= amount; }
+                        }
                     }
                 });
             }
         });
-        document.getElementById('annual-end-total').innerText = runningTotal.toFixed(0);
+        
+        if (document.getElementById('chk-end')) document.getElementById('chk-end').innerText = chk.toFixed(0);
+        if (document.getElementById('cc-end')) document.getElementById('cc-end').innerText = cc.toFixed(0);
+        if (document.getElementById('annual-end-total')) document.getElementById('annual-end-total').innerText = (chk + cc).toFixed(0);
+        
         updateBudgetHUD();
     }
 
@@ -1817,15 +1886,18 @@ include 'includes/header.php';
         tbody.innerHTML = '';
         
         let rowsToRender = [];
-        let currentTotal = 0;
         let isAllTab = currentTab === 'All';
         
+        let runChk = 0; let runCC = 0;
+
         if (isAllTab) {
-            currentTotal = parseFloat(document.getElementById('annual-start-balance').value) || 0;
+            if(document.getElementById('chk-start')) runChk = parseFloat(document.getElementById('chk-start').value) || 0;
+            if(document.getElementById('cc-start')) runCC = parseFloat(document.getElementById('cc-start').value) || 0;
             const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
             monthNames.forEach(m => {
                 if (ledgerData.months[m]) {
                     ledgerData.months[m].forEach((row, idx) => {
+                        if (!row) return;
                         if (row.item || String(row.amount).trim() !== '' || row.date || row.desc) {
                             rowsToRender.push({ row: row, month: m, idx: idx });
                         }
@@ -1833,8 +1905,8 @@ include 'includes/header.php';
                 }
             });
             rowsToRender.sort((a, b) => {
-                let dateA = a.row.date && a.row.date.trim() !== '' ? a.row.date : "9999-99-99";
-                let dateB = b.row.date && b.row.date.trim() !== '' ? b.row.date : "9999-99-99";
+                let dateA = a.row.date && String(a.row.date).trim() !== '' ? String(a.row.date) : "9999-99-99";
+                let dateB = b.row.date && String(b.row.date).trim() !== '' ? String(b.row.date) : "9999-99-99";
                 return dateA.localeCompare(dateB);
             });
         } else {
@@ -1843,7 +1915,9 @@ include 'includes/header.php';
                 for(let i=0; i<30; i++) {
                     let newRow = {};
                     ledgerData.columns.forEach(col => { 
-                        if(col.id !== 'total') {
+                        if(col.id === 'method') {
+                            newRow[col.id] = 'Checking';
+                        } else if(col.id !== 'total') {
                             if (col.id === 'completed') newRow[col.id] = 'Scheduled';
                             else newRow[col.id] = '';
                         }
@@ -1852,22 +1926,28 @@ include 'includes/header.php';
                 }
                 ledgerData.months[currentTab] = emptyRows;
             }
-            currentTotal = monthStartBalances[currentTab];
+            if (monthStartBalances[currentTab]) {
+                runChk = monthStartBalances[currentTab].chk;
+                runCC = monthStartBalances[currentTab].cc;
+            }
             ledgerData.months[currentTab].forEach((row, idx) => {
+                if (!row) return;
                 rowsToRender.push({ row: row, month: currentTab, idx: idx });
             });
         }
 
-        let finalTotal = currentTotal;
         const totalColors = ['bg-tot-1', 'bg-tot-2', 'bg-tot-3'];
         let colorIndex = 0;
 
-        let combinedOptions = [];
+        let combinedOptions = ['💳 CC Payment'];
         let cats = Object.keys(budgetData.categories || {});
         let incs = Object.keys(budgetData.incomes || {});
         cats.forEach(c => { if(!combinedOptions.includes(c)) combinedOptions.push(c); });
         incs.forEach(i => { if(!combinedOptions.includes(i)) combinedOptions.push(i); });
         combinedOptions.sort((a,b) => a.localeCompare(b));
+
+        let currentNetTotal = runChk + runCC;
+        let finalNetTotal = currentNetTotal;
 
         rowsToRender.forEach((itemObj, loopIndex) => {
             let row = itemObj.row;
@@ -1882,11 +1962,22 @@ include 'includes/header.php';
 
             let amount = parseFloat(row.amount);
             let hasAmount = !isNaN(amount) && row.amount !== "";
-            if (hasAmount) currentTotal += amount;
-            finalTotal = currentTotal;
+            
+            if (hasAmount) {
+                let isCCPayment = (row.category === '💳 CC Payment');
+                if (row.method === 'Credit Card') {
+                    if (isCCPayment) { runCC += amount; } else { runCC += amount; }
+                } else {
+                    runChk += amount;
+                    if (isCCPayment) { runCC -= amount; }
+                }
+                currentNetTotal = runChk + runCC;
+            }
+            finalNetTotal = currentNetTotal;
 
             let itemBg = (row.item && row.item.trim().toUpperCase() === "OPEN") ? "bg-open" : "";
             let amountBg = hasAmount ? (amount < 0 ? "bg-neg" : "bg-pos") : "";
+            let netBg = "bg-tot-net";
             
             let html = `<td style="text-align:center; background: var(--card-bg); border-right: 1px solid var(--border-color);"><input type="checkbox" class="row-select-cb" data-month="${month}" data-idx="${index}" value="${loopIndex}" onchange="updateMultiDeleteUI()" style="cursor:pointer; width: 14px; height: 14px; accent-color: var(--accent);"></td>`;
             
@@ -1895,7 +1986,7 @@ include 'includes/header.php';
                 let align = (col.id === 'amount' || col.id === 'total') ? 'text-align:right;' : (col.id === 'completed' ? 'text-align:center;' : '');
                 
                 if (col.id === 'date' && cellValue && !/^\d{4}-\d{2}-\d{2}$/.test(cellValue)) {
-                    let currentYearVal = document.getElementById('year-select').value;
+                    let currentYearVal = document.getElementById('year-select') ? document.getElementById('year-select').value : '';
                     let d = new Date(cellValue + (cellValue.includes(currentYearVal) ? '' : ' ' + currentYearVal));
                     if (!isNaN(d.getTime())) {
                         let mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1906,13 +1997,18 @@ include 'includes/header.php';
                 }
 
                 if (col.id === 'total') {
-                    html += `<td class="cell-total ${totalBgClass}" style="${align} padding-right:4px;">${hasAmount || loopIndex === 0 ? currentTotal.toFixed(0) : ''}</td>`;
+                    html += `<td class="cell-total ${netBg}" style="${align} padding-right:4px; font-weight:bold;">${hasAmount || loopIndex === 0 ? currentNetTotal.toFixed(0) : ''}</td>`;
                 } else if (col.id === 'amount') {
                     html += `<td class="cell-amount ${amountBg}"><input type="number" step="0.01" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
                 } else if (col.id === 'date') {
                     html += `<td><input type="date" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
                 } else if (col.id === 'item') {
                     html += `<td class="cell-item ${itemBg}"><input type="text" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
+                } else if (col.id === 'method') {
+                    html += `<td><select class="sheet-input" data-col="method" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}">
+                        <option value="Checking" ${cellValue === 'Checking' || cellValue === '' ? 'selected' : ''}>Checking</option>
+                        <option value="Credit Card" ${cellValue === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
+                    </select></td>`;
                 } else if (col.id === 'category') {
                     let opts = `<option value=""></option>`;
                     combinedOptions.forEach(opt => { opts += `<option value="${opt}" ${trimStr(cellValue).toLowerCase() === trimStr(opt).toLowerCase() ? 'selected' : ''}>${opt}</option>`; });
@@ -1939,7 +2035,17 @@ include 'includes/header.php';
         });
 
         const mTotal = document.getElementById('month-total-cell');
-        if (mTotal) mTotal.innerText = finalTotal.toFixed(0);
+        if (mTotal) {
+            let initialNet = 0;
+            if(document.getElementById('chk-start') && document.getElementById('cc-start')) {
+                initialNet = (parseFloat(document.getElementById('chk-start').value) || 0) + (parseFloat(document.getElementById('cc-start').value) || 0);
+            }
+            if (currentTab !== 'All' && monthStartBalances[currentTab]) {
+                initialNet = monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc;
+            }
+            let netChange = finalNetTotal - initialNet;
+            mTotal.innerText = netChange.toFixed(0);
+        }
         
         const masterAddBtn = document.getElementById('master-add-row-container');
         if (masterAddBtn) { masterAddBtn.style.display = isAllTab ? 'none' : 'block'; }
@@ -1949,7 +2055,7 @@ include 'includes/header.php';
 
     function updateRow(month, index, field, value) {
         ledgerData.months[month][index][field] = value;
-        if (field === 'amount' || field === 'item' || field === 'date' || field === 'category' || field === 'completed') {
+        if (field === 'amount' || field === 'item' || field === 'date' || field === 'category' || field === 'completed' || field === 'method') {
             calculateAllTotals();
             if (currentTab === 'All') renderTable(); else updateTableVisuals(); 
         }
@@ -1957,22 +2063,36 @@ include 'includes/header.php';
     }
 
     function updateTableVisuals() {
-        let currentTotal = monthStartBalances[currentTab];
+        let currentTotal = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc : 0;
         let finalTotal = currentTotal;
         const totalColors = ['bg-tot-1', 'bg-tot-2', 'bg-tot-3'];
         let colorIndex = 0;
+        
+        let runChk = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk : 0;
+        let runCC = monthStartBalances[currentTab] ? monthStartBalances[currentTab].cc : 0;
 
         let rows = ledgerData.months[currentTab] || [];
         rows.forEach((row, index) => {
             const tr = document.getElementById('row-' + index);
             if (!tr) return;
+            if (!row) return;
 
             if (row.date && row.date.trim() !== '') colorIndex = (colorIndex + 1) % totalColors.length;
             let totalBgClass = totalColors[colorIndex];
 
             let amount = parseFloat(row.amount);
             let hasAmount = !isNaN(amount) && row.amount !== "";
-            if (hasAmount) currentTotal += amount;
+            
+            if (hasAmount) {
+                let isCCPayment = (row.category === '💳 CC Payment');
+                if (row.method === 'Credit Card') {
+                    if (isCCPayment) { runCC += amount; } else { runCC += amount; }
+                } else {
+                    runChk += amount;
+                    if (isCCPayment) { runCC -= amount; }
+                }
+                currentTotal = runChk + runCC;
+            }
             finalTotal = currentTotal;
 
             let itemBg = (row.item && row.item.trim().toUpperCase() === "OPEN") ? "bg-open" : "";
@@ -1986,7 +2106,6 @@ include 'includes/header.php';
             
             let cellTotal = tr.querySelector('.cell-total');
             if (cellTotal) {
-                cellTotal.className = "cell-total " + totalBgClass;
                 cellTotal.innerText = (hasAmount || index === 0) ? currentTotal.toFixed(0) : '';
             }
             
@@ -1997,7 +2116,11 @@ include 'includes/header.php';
         });
 
         const mTotal = document.getElementById('month-total-cell');
-        if (mTotal) mTotal.innerText = finalTotal.toFixed(0);
+        if (mTotal) {
+            let initialNet = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc : 0;
+            let netChange = finalTotal - initialNet;
+            mTotal.innerText = netChange.toFixed(0);
+        }
         updateBudgetHUD();
     }
     
@@ -2015,8 +2138,10 @@ include 'includes/header.php';
 
     function triggerSave(recalcAll = false) {
         clearTimeout(saveTimeout);
-        document.getElementById('save-status').innerText = "⏳ Pending...";
-        document.getElementById('save-status').classList.add('visible');
+        if(document.getElementById('save-status')) {
+            document.getElementById('save-status').innerText = "⏳ Pending...";
+            document.getElementById('save-status').classList.add('visible');
+        }
         if (recalcAll) { 
             calculateAllTotals(); 
             if (currentTab === 'All') renderTable(); else updateTableVisuals(); 
@@ -2025,7 +2150,7 @@ include 'includes/header.php';
     }
 
     function saveData() {
-        document.getElementById('save-status').innerText = "⏳ Saving...";
+        if(document.getElementById('save-status')) document.getElementById('save-status').innerText = "⏳ Saving...";
         fetch('ledger.php?api=save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2033,7 +2158,7 @@ include 'includes/header.php';
         })
         .then(res => res.json())
         .then(res => {
-            if (res.status === 'success') {
+            if (res.status === 'success' && document.getElementById('save-status')) {
                 document.getElementById('save-status').innerText = "💾 Saved";
                 setTimeout(() => { 
                     if(document.getElementById('save-status').innerText === "💾 Saved") {

@@ -83,3 +83,20 @@
 [22-Sep-2026 15:39:16 UTC] PHP Warning:  Undefined array key "method" in /home/brokwxrm/app.brokenhappy.com/shared.php on line 72
 [22-Sep-2026 15:39:16 UTC] PHP Warning:  Undefined array key "method" in /home/brokwxrm/app.brokenhappy.com/shared.php on line 72
 [22-Sep-2026 15:39:16 UTC] PHP Warning:  Undefined array key "method" in /home/brokwxrm/app.brokenhappy.com/shared.php on line 72
+[12-Oct-2026 16:48:56 UTC] PHP Parse error:  syntax error, unexpected fully qualified name "\vert" in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 45
+[12-Oct-2026 16:49:01 UTC] PHP Parse error:  syntax error, unexpected fully qualified name "\vert" in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 45
+[13-Oct-2026 16:16:11 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY093]: Invalid parameter number in /home/brokwxrm/app.brokenhappy.com/ledger.php:180
+Stack trace:
+#0 /home/brokwxrm/app.brokenhappy.com/ledger.php(180): PDOStatement->execute()
+#1 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 180
+[13-Oct-2026 16:17:44 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY093]: Invalid parameter number in /home/brokwxrm/app.brokenhappy.com/ledger.php:180
+Stack trace:
+#0 /home/brokwxrm/app.brokenhappy.com/ledger.php(180): PDOStatement->execute()
+#1 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 180
+[14-Oct-2026 12:40:07 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[HY093]: Invalid parameter number in /home/brokwxrm/app.brokenhappy.com/combined.php:93
+Stack trace:
+#0 /home/brokwxrm/app.brokenhappy.com/combined.php(93): PDOStatement->execute()
+#1 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/combined.php on line 93
