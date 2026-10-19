@@ -19,6 +19,84 @@ $pdo = $db->getConnection();
 $message = '';
 $message_type = 'success'; 
 
+// --- SMART AUTO-HEAL: Check for old schema, drop if necessary, and build the correct one ---
+try {
+    // Check if the table exists but is missing the new 'feature_key' column
+    $stmt = $pdo->query("SHOW COLUMNS FROM user_features LIKE 'feature_key'");
+    if ($stmt && $stmt->rowCount() == 0) {
+        $pdo->exec("DROP TABLE user_features"); // Clear the old schema
+    }
+} catch (Exception $e) {}
+
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS user_features (
+        user_id INT NOT NULL,
+        feature_key VARCHAR(50) NOT NULL,
+        is_enabled TINYINT(1) DEFAULT 1,
+        PRIMARY KEY (user_id, feature_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+} catch (Exception $e) {}
+
+// --- FEATURE TOGGLE API SYSTEM ---
+$app_features = [
+    'finance_ledger'    => 'Annual Ledger',
+    'finance_budget'    => 'Budget Planner',
+    'planning_calendar' => 'Calendar / Planner',
+    'planning_tasks'    => 'Tasks Manager',
+    'planning_meetings' => 'Meetings',
+    'knowledge_notes'   => 'Notes',
+    'knowledge_kb'      => 'Knowledge Base',
+    'time_tracker'      => 'Time Tracker',
+    'portfolio'         => 'Portfolio / Projects'
+];
+
+if (isset($_GET['api'])) {
+    header('Content-Type: application/json');
+
+    if ($_GET['api'] === 'get_features') {
+        $target_user = (int)$_GET['user_id'];
+        $stmt = $pdo->prepare("SELECT feature_key, is_enabled FROM user_features WHERE user_id = :uid");
+        $stmt->execute([':uid' => $target_user]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $features = [];
+        foreach ($rows as $row) { $features[$row['feature_key']] = (int)$row['is_enabled']; }
+        foreach ($app_features as $key => $label) { if (!isset($features[$key])) $features[$key] = 1; }
+        
+        echo json_encode(['status' => 'success', 'features' => $features]);
+        exit;
+    }
+
+    if ($_GET['api'] === 'save_features') {
+        try {
+            $payload = json_decode(file_get_contents('php://input'), true);
+            $target_user = (int)$payload['user_id'];
+            $toggles = $payload['features'];
+
+            // Using pure Select/Update/Insert to avoid any PDO parameter collision errors
+            $stmt_check = $pdo->prepare("SELECT 1 FROM user_features WHERE user_id = ? AND feature_key = ?");
+            $stmt_update = $pdo->prepare("UPDATE user_features SET is_enabled = ? WHERE user_id = ? AND feature_key = ?");
+            $stmt_insert = $pdo->prepare("INSERT INTO user_features (user_id, feature_key, is_enabled) VALUES (?, ?, ?)");
+
+            foreach ($app_features as $key => $label) {
+                $is_enabled = (isset($toggles[$key]) && $toggles[$key] == 1) ? 1 : 0;
+                
+                $stmt_check->execute([$target_user, $key]);
+                if ($stmt_check->fetchColumn()) {
+                    $stmt_update->execute([$is_enabled, $target_user, $key]);
+                } else {
+                    $stmt_insert->execute([$target_user, $key, $is_enabled]);
+                }
+            }
+            echo json_encode(['status' => 'success']);
+        } catch (Exception $e) {
+            echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        }
+        exit;
+    }
+}
+// --- END FEATURE API ---
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     $target_user_id = (int)($_POST['user_id'] ?? 0);
@@ -192,6 +270,22 @@ include '../includes/header.php';
         .cat-color-cell { justify-content: flex-end; }
         .cat-color-cell::before { margin-right: auto; }
     }
+
+    /* Feature Modal Styles */
+    .fm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 9999; padding: 15px; font-family: Arial, sans-serif; }
+    .fm-content { background: var(--card-bg, #1e293b); padding: 30px; border-radius: 12px; width: 450px; max-width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color, #334155); }
+    .fm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color, #334155); padding-bottom: 15px; }
+    .fm-header h3 { margin: 0; font-size: 1.4em; color: var(--text-main, #f8fafc); } 
+    .fm-close { background: none; border: none; font-size: 1.5em; color: var(--text-muted, #94a3b8); cursor: pointer; padding: 0; }
+    .fm-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border-color, #334155); }
+    .fm-row:last-child { border-bottom: none; }
+    .fm-row label { color: var(--text-main, #f8fafc); font-weight: bold; cursor: pointer; flex-grow: 1; font-size:14px; }
+    .fm-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+    .fm-switch input { opacity: 0; width: 0; height: 0; }
+    .fm-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .4s; border-radius: 34px; }
+    .fm-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+    .fm-switch input:checked + .fm-slider { background-color: #22c55e; }
+    .fm-switch input:checked + .fm-slider:before { transform: translateX(18px); }
 </style>
 
 <div class="page-header">
@@ -222,7 +316,7 @@ include '../includes/header.php';
                 <tr style="border-bottom: 1px dashed var(--border-color);">
                     <td data-label="Email Address" style="padding: 15px; color: var(--text-main);">
                         <strong><?= htmlspecialchars($u['email']) ?></strong>
-                        <?php if($u['id'] === $_SESSION['user_id']): ?>
+                        <?php if($u['id'] ===$_SESSION['user_id']): ?>
                             <span class="tag-pill" style="margin-left: 10px;">You</span>
                         <?php endif; ?>
                     </td>
@@ -251,7 +345,9 @@ include '../includes/header.php';
                     </td>
                     <td data-label="Actions" style="padding: 15px;">
                         <div style="display: flex; justify-content: flex-end; gap: 8px; align-items: center; flex-wrap: wrap;">
-                            <?php if($u['id'] !== $_SESSION['user_id']): ?>
+                            <button onclick="openFeatureModal(<?= $u['id'] ?>, '<?= htmlspecialchars(addslashes($u['email'])) ?>')" class="btn btn-small" style="background:var(--accent); color:white; border-radius:4px; padding:4px 8px; font-size:12px; border:none; cursor:pointer;" title="Manage Feature Access">⚙️ Features</button>
+
+                            <?php if($u['id'] !==$_SESSION['user_id']): ?>
                                 <form method="GET" action="impersonate.php" style="margin: 0;">
                                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                                     <button type="submit" class="btn btn-small" style="background: transparent; color: var(--warning); border: 1px solid var(--warning);" title="Login as this user">Login As</button>
@@ -263,7 +359,7 @@ include '../includes/header.php';
                                 <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
                                 <input type="hidden" name="current_status" value="<?= htmlspecialchars($current_status) ?>">
                                 <?php if ($current_status === 'active'): ?>
-                                    <button type="submit" class="btn btn-small" style="background: transparent; color: var(--warning); border: 1px solid var(--warning);" <?= $u['id'] === $_SESSION['user_id'] ? 'disabled' : '' ?>>Suspend</button>
+                                    <button type="submit" class="btn btn-small" style="background: transparent; color: var(--warning); border: 1px solid var(--warning);" <?= $u['id'] ===$_SESSION['user_id'] ? 'disabled' : '' ?>>Suspend</button>
                                 <?php else: ?>
                                     <button type="submit" class="btn btn-small" style="background: var(--success); color: white; border: none;">Approve</button>
                                 <?php endif; ?>
@@ -275,7 +371,7 @@ include '../includes/header.php';
                                 <button type="submit" class="btn btn-small" style="background: transparent; color: var(--accent); border: 1px solid var(--accent);">Reset</button>
                             </form>
                             
-                            <?php if($u['id'] !== $_SESSION['user_id']): ?>
+                            <?php if($u['id'] !==$_SESSION['user_id']): ?>
                                 <form method="POST" onsubmit="return confirm('WARNING: This will permanently delete this user and all personal data. Proceed?');" style="margin: 0;">
                                     <input type="hidden" name="action" value="delete_user">
                                     <input type="hidden" name="user_id" value="<?= $u['id'] ?>">
@@ -330,7 +426,7 @@ include '../includes/header.php';
                         <td colspan="3" style="text-align: center; padding: 20px; color: var(--text-muted);">No task categories found. Create the first category above!</td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($categories as $cat): ?>
+                    <?php foreach ($categories as$cat): ?>
                         <tr style="border-bottom: 1px dashed var(--border-color);">
                             <td data-label="Color" class="cat-color-cell" style="padding: 12px; width: 60px;">
                                 <span style="display: inline-block; width: 20px; height: 20px; background: <?= htmlspecialchars($cat['color']) ?>; border-radius: 50%; vertical-align: middle;"></span>
@@ -377,12 +473,10 @@ include '../includes/header.php';
                         <td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">No audit logs recorded yet.</td>
                     </tr>
                 <?php else: ?>
-                    <?php foreach ($audit_logs as $log): 
-                        $log_time = $log['created_at'] ?? $log['timestamp'] ?? date('Y-m-d H:i:s');
+                    <?php foreach ($audit_logs as $log):$log_time = $log['created_at'] ?? $log['timestamp'] ?? date('Y-m-d H:i:s');
                         $log_email = $log['email'] ?? ('User #' . ($log['user_id'] ?? 0));
-                        $log_action = $log['action'] ?? $log['action_type'] ?? $log['event_type'] ?? 'UNKNOWN_ACTION';
-                        $log_module = $log['module'] ?? $log['category'] ?? 'General';
-                        $log_details = $log['details'] ?? $log['description'] ?? '';
+                        $log_action =$log['action'] ?? $log['action_type'] ?? $log['event_type'] ?? 'UNKNOWN_ACTION';
+                        $log_module =$log['module'] ?? $log['category'] ?? 'General';$log_details = $log['details'] ?? $log['description'] ?? '';
                     ?>
                         <tr style="border-bottom: 1px dashed var(--border-color); font-size: 0.9em;">
                             <td data-label="Timestamp" style="padding: 10px; color: var(--text-muted); white-space: nowrap;"><?= htmlspecialchars($log_time) ?></td>
@@ -414,6 +508,113 @@ include '../includes/header.php';
         document.getElementById('categoryColor').value = '#3b82f6';
         document.getElementById('submitBtn').innerText = 'Add';
         document.getElementById('cancelEdit').style.display = 'none';
+    }
+</script>
+
+<div id="featureModal" class="fm-overlay">
+    <div class="fm-content">
+        <div class="fm-header">
+            <div>
+                <h3 id="fmUserName" style="margin-bottom:4px;">User Settings</h3>
+                <span style="font-size: 12px; color: var(--text-muted, #94a3b8);">Module Access Control</span>
+            </div>
+            <button class="fm-close" onclick="closeFeatureModal()">✕</button>
+        </div>
+        
+        <form id="featureForm" onsubmit="saveFeatures(event)">
+            <input type="hidden" id="manageUserId" value="">
+            
+            <div style="background: var(--bg-color, #0f172a); border: 1px solid var(--border-color, #334155); border-radius: 8px; padding: 0 15px; margin-bottom: 20px;">
+                <?php foreach($app_features as $key =>$label): ?>
+                    <div class="fm-row">
+                        <label for="toggle_<?= $key ?>"><?= htmlspecialchars($label) ?></label>
+                        <label class="fm-switch">
+                            <input type="checkbox" id="toggle_<?= $key ?>" class="feature-checkbox" data-key="<?= $key ?>">
+                            <span class="fm-slider"></span>
+                        </label>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <button type="submit" id="saveFeaturesBtn" style="width: 100%; padding: 12px; font-size: 14px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold;">💾 Save Changes</button>
+            <div id="saveMsg" style="text-align: center; font-size: 13px; color: #22c55e; font-weight: bold; margin-top: 10px; opacity: 0; transition: 0.3s;">Saved Successfully!</div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openFeatureModal(userId, userName) {
+        document.getElementById('fmUserName').innerText = userName;
+        document.getElementById('manageUserId').value = userId;
+        document.querySelectorAll('.feature-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('featureModal').style.display = 'flex';
+
+        fetch(`users.php?api=get_features&user_id=${userId}`)
+            .then(res => res.json())
+            .then(data => {
+                if(data.status === 'success') {
+                    for (const [key, isEnabled] of Object.entries(data.features)) {
+                        let cb = document.getElementById(`toggle_${key}`);
+                        if (cb) cb.checked = (isEnabled === 1);
+                    }
+                }
+            })
+            .catch(err => console.error("Error loading features:", err));
+    }
+
+    function closeFeatureModal() {
+        document.getElementById('featureModal').style.display = 'none';
+        document.getElementById('saveMsg').style.opacity = '0';
+    }
+
+    function saveFeatures(e) {
+        e.preventDefault();
+        const userId = document.getElementById('manageUserId').value;
+        const btn = document.getElementById('saveFeaturesBtn');
+        const msg = document.getElementById('saveMsg');
+        
+        let features = {};
+        document.querySelectorAll('.feature-checkbox').forEach(cb => {
+            features[cb.dataset.key] = cb.checked ? 1 : 0;
+        });
+
+        btn.innerText = "⏳ Saving...";
+        btn.disabled = true;
+
+        fetch('users.php?api=save_features', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, features: features })
+        })
+        .then(async res => {
+            if (!res.ok) {
+                const text = await res.text();
+                throw new Error("HTTP " + res.status + ": " + text);
+            }
+            return res.json();
+        })
+        .then(res => {
+            btn.innerText = "💾 Save Changes";
+            btn.disabled = false;
+            if(res.status === 'success') {
+                msg.style.opacity = '1';
+                msg.style.color = '#22c55e';
+                msg.innerText = "Saved Successfully!";
+                setTimeout(() => { msg.style.opacity = '0'; }, 2000);
+            } else {
+                msg.style.opacity = '1';
+                msg.style.color = '#ef4444';
+                msg.innerText = "Database Error: " + (res.message || "Unknown error");
+            }
+        })
+        .catch(err => {
+            btn.innerText = "💾 Save Changes";
+            btn.disabled = false;
+            msg.style.opacity = '1';
+            msg.style.color = '#ef4444';
+            msg.innerText = "Connection Error: " + err.message;
+            console.error(err);
+        });
     }
 </script>
 

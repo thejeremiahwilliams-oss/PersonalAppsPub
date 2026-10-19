@@ -5,6 +5,7 @@ require_once 'config/database.php';
 require_once 'includes/audit_logger.php'; 
 
 require_login(); 
+check_feature_access('knowledge_kb');
 $user_id = $_SESSION['user_id']; 
 $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'); 
 $can_edit_kb = (isset($_SESSION['role']) && in_array($_SESSION['role'], ['admin', 'editor'])); 

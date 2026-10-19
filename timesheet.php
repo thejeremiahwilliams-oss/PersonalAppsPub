@@ -5,6 +5,7 @@ require_once 'config/database.php';
 require_once 'includes/audit_logger.php';
 
 require_login();
+check_feature_access('time_tracker');
 $user_id = $_SESSION['user_id'];
 $is_admin = (isset($_SESSION['role']) && $_SESSION['role'] === 'admin');
 

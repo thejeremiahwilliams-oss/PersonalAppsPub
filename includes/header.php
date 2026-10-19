@@ -352,44 +352,72 @@ $is_knowledge_open = in_array($current_page, $knowledge_pages);
             <ul class="nav-links">
                 <li><a href="/index.php" class="<?= $current_page === 'index.php' ? 'active' : '' ?>">Dashboard</a></li>
                 
+                <?php if (has_feature_access('planning_calendar') || has_feature_access('planning_tasks') || has_feature_access('planning_meetings')): ?>
                 <li>
                     <div class="nav-group-header <?= $is_planning_open ? 'open' : '' ?>" onclick="toggleSubmenu(this)">
                         <span>Planning</span>
                         <span class="chevron">▼</span>
                     </div>
                     <ul class="submenu <?= $is_planning_open ? 'open' : '' ?>">
+                        <?php if (has_feature_access('planning_calendar')): ?>
                         <li><a href="/planner.php" class="<?= $current_page === 'planner.php' ? 'active' : '' ?>">Daily Planner</a></li>
+                        <?php endif; ?>
+                        
+                        <?php if (has_feature_access('planning_tasks')): ?>
                         <li><a href="/tasks.php" class="<?= $current_page === 'tasks.php' ? 'active' : '' ?>">Tasks & Plans</a></li>
+                        <?php endif; ?>
+                        
+                        <?php if (has_feature_access('planning_meetings')): ?>
                         <li><a href="/meetings.php" class="<?= $current_page === 'meetings.php' ? 'active' : '' ?>">Meetings</a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
 
+                <?php if (has_feature_access('knowledge_notes') || has_feature_access('knowledge_kb')): ?>
                 <li>
                     <div class="nav-group-header <?= $is_knowledge_open ? 'open' : '' ?>" onclick="toggleSubmenu(this)">
                         <span>Knowledge</span>
                         <span class="chevron">▼</span>
                     </div>
                     <ul class="submenu <?= $is_knowledge_open ? 'open' : '' ?>">
+                        <?php if (has_feature_access('knowledge_notes')): ?>
                         <li><a href="/notes.php" class="<?= $current_page === 'notes.php' ? 'active' : '' ?>">Notes</a></li>
+                        <?php endif; ?>
+                        
+                        <?php if (has_feature_access('knowledge_kb')): ?>
                         <li><a href="/kb.php" class="<?= $current_page === 'kb.php' ? 'active' : '' ?>">Knowledge Base</a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
                 
+                <?php if (has_feature_access('finance_ledger') || has_feature_access('finance_budget') || has_feature_access('portfolio')): ?>
                 <li>
                     <div class="nav-group-header <?= $is_finance_open ? 'open' : '' ?>" onclick="toggleSubmenu(this)">
                         <span>Finance</span>
                         <span class="chevron">▼</span>
                     </div>
                     <ul class="submenu <?= $is_finance_open ? 'open' : '' ?>">
+                        <?php if (has_feature_access('finance_ledger')): ?>
                         <li><a href="/ledger.php" class="<?= $current_page === 'ledger.php' ? 'active' : '' ?>">Annual Ledger</a></li>
+                        <?php endif; ?>
+                        
+                        <?php if (has_feature_access('finance_budget')): ?>
                         <li><a href="/budget.php" class="<?= $current_page === 'budget.php' ? 'active' : '' ?>">Budget Planner</a></li>
+                        <?php endif; ?>
+                        
+                        <?php if (has_feature_access('portfolio')): ?>
                         <li><a href="/portfolio.php" class="<?= $current_page === 'portfolio.php' ? 'active' : '' ?>">Portfolio Calculator</a></li>
+                        <?php endif; ?>
                     </ul>
                 </li>
+                <?php endif; ?>
 
-                
-                
+                <?php if (has_feature_access('time_tracker')): ?>
                 <li><a href="/timesheet.php" class="<?= $current_page === 'timesheet.php' ? 'active' : '' ?>">Time Tracker</a></li>
+                <?php endif; ?>
+                
                 <li><a href="/search.php" class="<?= $current_page === 'search.php' ? 'active' : '' ?>">Global Search</a></li>
                 
                 <li style="margin-top: auto; padding-top: 15px; border-top: 1px solid var(--border-color); display: flex; gap: 8px;">

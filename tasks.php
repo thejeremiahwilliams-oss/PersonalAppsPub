@@ -7,6 +7,7 @@ require_once 'includes/audit_logger.php';
 require_once 'includes/notification_functions.php';
 
 require_login();
+check_feature_access('planning_tasks');
 $user_id = $_SESSION['user_id'];
 $db = new Database();
 $pdo = $db->getConnection();

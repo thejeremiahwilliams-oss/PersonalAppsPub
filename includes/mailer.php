@@ -13,10 +13,10 @@ function send_memo_email($to, $subject, $html_message) {
 
     try {
         $mail->isSMTP();
-        $mail->Host       = ;       // Brevo's SMTP server
+        $mail->Host       = '';       // Brevo's SMTP server
         $mail->SMTPAuth   = true;                         
-        $mail->Username   = ;     // <-- Your Brevo SMTP Username
-        $mail->Password   = ;        // <-- The SMTP key you generated in Step 1
+        $mail->Username   = '';     // <-- Your Brevo SMTP Username
+        $mail->Password   = '';        // <-- The SMTP key you generated in Step 1
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; 
         $mail->Port       = 587;                          
 

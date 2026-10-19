@@ -5,6 +5,7 @@ require_once 'config/database.php';
 require_once 'includes/audit_logger.php';
 
 require_login();
+check_feature_access('knowledge_notes');
 $user_id = $_SESSION['user_id'];
 $db = new Database();
 $pdo = $db->getConnection();

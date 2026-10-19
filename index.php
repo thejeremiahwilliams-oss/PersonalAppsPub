@@ -11,8 +11,18 @@ $db = new Database();
 $pdo = $db->getConnection();
 $current_time = date('Y-m-d H:i:s');
 
+// --- ACCESS CHECKS FOR WIDGETS ---
+$show_tasks = has_feature_access('planning_tasks');
+$show_planner = has_feature_access('planning_calendar');
+$show_meetings = has_feature_access('planning_meetings');
+$show_notes = has_feature_access('knowledge_notes');
+$show_kb = has_feature_access('knowledge_kb');
+$show_ledger = has_feature_access('finance_ledger');
+$show_budget = has_feature_access('finance_budget');
+$show_timesheet = has_feature_access('time_tracker');
+
 // Handle Quick Complete for Tasks
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'quick_complete_task') {
+if ($show_tasks && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'quick_complete_task') {
     $task_id = (int)$_POST['task_id'];
     $stmt = $pdo->prepare("UPDATE tasks SET status = 'completed' WHERE id = :id AND user_id = :user_id");
     $stmt->execute([':id' => $task_id, ':user_id' => $user_id]);
@@ -22,28 +32,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // 1. Fetch Top Tasks
-$stmt = $pdo->prepare("SELECT id, title, status, due_date, task_category FROM tasks WHERE user_id = :uid AND status != 'completed' ORDER BY due_date ASC, created_at DESC LIMIT 3");
-$stmt->execute([':uid' => $user_id]);
-$tasks = $stmt->fetchAll();
+$tasks = [];
+if ($show_tasks) {
+    $stmt = $pdo->prepare("SELECT id, title, status, due_date, task_category FROM tasks WHERE user_id = :uid AND status != 'completed' ORDER BY due_date ASC, created_at DESC LIMIT 3");
+    $stmt->execute([':uid' => $user_id]);
+    $tasks = $stmt->fetchAll();
+}
 
 // 2. Fetch Upcoming Meetings
-$stmt = $pdo->prepare("SELECT id, title, meeting_date FROM meetings WHERE user_id = :uid AND meeting_date >= :now ORDER BY meeting_date ASC LIMIT 3");
-$stmt->execute([':uid' => $user_id, ':now' => $current_time]);
-$meetings = $stmt->fetchAll();
+$meetings = [];
+if ($show_meetings) {
+    $stmt = $pdo->prepare("SELECT id, title, meeting_date FROM meetings WHERE user_id = :uid AND meeting_date >= :now ORDER BY meeting_date ASC LIMIT 3");
+    $stmt->execute([':uid' => $user_id, ':now' => $current_time]);
+    $meetings = $stmt->fetchAll();
+}
 
 // 3. Fetch Recent Notes
-$stmt = $pdo->prepare("SELECT id, title, created_at FROM notes WHERE user_id = :uid ORDER BY created_at DESC LIMIT 3");
-$stmt->execute([':uid' => $user_id]);
-$notes = $stmt->fetchAll();
+$notes = [];
+if ($show_notes) {
+    $stmt = $pdo->prepare("SELECT id, title, created_at FROM notes WHERE user_id = :uid ORDER BY created_at DESC LIMIT 3");
+    $stmt->execute([':uid' => $user_id]);
+    $notes = $stmt->fetchAll();
+}
 
 // 4. Fetch Recent KB Articles
-if ($is_admin) {
-    $stmt = $pdo->query("SELECT id, title, category, is_private, updated_at FROM kb_articles ORDER BY updated_at DESC LIMIT 3");
-    $kb_articles = $stmt->fetchAll();
-} else {
-    $stmt = $pdo->prepare("SELECT id, title, category, is_private, updated_at FROM kb_articles WHERE (is_private = 0 OR author_id = :uid) ORDER BY updated_at DESC LIMIT 3");
-    $stmt->execute([':uid' => $user_id]);
-    $kb_articles = $stmt->fetchAll();
+$kb_articles = [];
+if ($show_kb) {
+    if ($is_admin) {
+        $stmt = $pdo->query("SELECT id, title, category, is_private, updated_at FROM kb_articles ORDER BY updated_at DESC LIMIT 3");
+        $kb_articles = $stmt->fetchAll();
+    } else {
+        $stmt = $pdo->prepare("SELECT id, title, category, is_private, updated_at FROM kb_articles WHERE (is_private = 0 OR author_id = :uid) ORDER BY updated_at DESC LIMIT 3");
+        $stmt->execute([':uid' => $user_id]);
+        $kb_articles = $stmt->fetchAll();
+    }
 }
 
 // 5. Fetch Activity Momentum
@@ -55,37 +77,45 @@ try {
 } catch (Exception $e) {}
 
 // 6. Fetch Active Timesheet Draft
-$stmt_ts = $pdo->prepare("SELECT active_draft FROM users WHERE id = :uid");
-$stmt_ts->execute([':uid' => $user_id]);
-$ts_row = $stmt_ts->fetch();
-$active_timesheet = (!empty($ts_row['active_draft'])) ? json_decode($ts_row['active_draft'], true) : null;
-
 $ts_work = 0; $ts_pto = 0; $ts_personal = 0; $ts_dates = 'Current Week';
-if ($active_timesheet && isset($active_timesheet['rows'])) {
-    $ts_dates = $active_timesheet['meta']['dates'] ?? 'Current Week';
-    if (empty(trim($ts_dates))) $ts_dates = 'Current Week';
-    foreach ($active_timesheet['rows'] as $r) {
-        $val = (float)($r['total'] ?? 0);
-        $type = $r['type'] ?? 'Work';
-        if ($type === 'PTO') $ts_pto += $val;
-        elseif ($type === 'Personal') $ts_personal += $val;
-        else $ts_work += $val;
-    }
+$ts_grand_total = 0;
+$active_timesheet = null;
+if ($show_timesheet) {
+    try {
+        $stmt_ts = $pdo->prepare("SELECT active_draft FROM users WHERE id = :uid");
+        $stmt_ts->execute([':uid' => $user_id]);
+        $ts_row = $stmt_ts->fetch();
+        $active_timesheet = (!empty($ts_row['active_draft'])) ? json_decode($ts_row['active_draft'], true) : null;
+
+        if ($active_timesheet && isset($active_timesheet['rows'])) {
+            $ts_dates = $active_timesheet['meta']['dates'] ?? 'Current Week';
+            if (empty(trim($ts_dates))) $ts_dates = 'Current Week';
+            foreach ($active_timesheet['rows'] as $r) {
+                $val = (float)($r['total'] ?? 0);
+                $type = $r['type'] ?? 'Work';
+                if ($type === 'PTO') $ts_pto += $val;
+                elseif ($type === 'Personal') $ts_personal += $val;
+                else $ts_work += $val;
+            }
+        }
+        $ts_grand_total = $ts_work + $ts_pto + $ts_personal;
+    } catch (Exception $e) {}
 }
-$ts_grand_total = $ts_work + $ts_pto + $ts_personal;
 
 // 7. Fetch Today's Daily Plan
-$today_date = date('Y-m-d');
-$today_plan = null;
-try {
-    $stmt_plan = $pdo->prepare("SELECT plan_data FROM daily_plans WHERE user_id = :uid AND plan_date = :pdate");
-    $stmt_plan->execute([':uid' => $user_id, ':pdate' => $today_date]);
-    $plan_row = $stmt_plan->fetch(PDO::FETCH_ASSOC);
-    if ($plan_row && !empty($plan_row['plan_data'])) {
-        $today_plan = json_decode($plan_row['plan_data'], true);
-    }
-} catch (Exception $e) {}
-$plan_priorities = $today_plan['priorities'] ?? [];
+$plan_priorities = [];
+if ($show_planner) {
+    $today_date = date('Y-m-d');
+    try {
+        $stmt_plan = $pdo->prepare("SELECT plan_data FROM daily_plans WHERE user_id = :uid AND plan_date = :pdate");
+        $stmt_plan->execute([':uid' => $user_id, ':pdate' => $today_date]);
+        $plan_row = $stmt_plan->fetch(PDO::FETCH_ASSOC);
+        if ($plan_row && !empty($plan_row['plan_data'])) {
+            $today_plan = json_decode($plan_row['plan_data'], true);
+            $plan_priorities = $today_plan['priorities'] ?? [];
+        }
+    } catch (Exception $e) {}
+}
 
 // 8. Fetch Finance Data (Ledger & Budget)
 $current_year = (int)date('Y');
@@ -95,65 +125,67 @@ $current_month_tab = $tab_map[$current_month_num];
 
 $upcoming_ledger_items = [];
 $ledger_json = null;
-try {
-    $stmt_ledger = $pdo->prepare("SELECT ledger_data FROM yearly_ledgers WHERE user_id = :uid AND ledger_year = :year");
-    $stmt_ledger->execute([':uid' => $user_id, ':year' => $current_year]);
-    $ledger_row = $stmt_ledger->fetch(PDO::FETCH_ASSOC);
-    if ($ledger_row && !empty($ledger_row['ledger_data'])) {
-        $ledger_json = json_decode($ledger_row['ledger_data'], true);
-        if (isset($ledger_json['months'][$current_month_tab])) {
-            foreach ($ledger_json['months'][$current_month_tab] as $row) {
-                $item_name = strtolower(trim($row['item'] ?? ''));
-                $completed_status = strtolower(trim($row['completed'] ?? ''));
-                if (!empty($row['item']) && $item_name !== 'open' && $completed_status !== 'x' && $completed_status !== 'yes') {
-                    $upcoming_ledger_items[] = $row;
+if ($show_ledger) {
+    try {
+        $stmt_ledger = $pdo->prepare("SELECT ledger_data FROM yearly_ledgers WHERE user_id = :uid AND ledger_year = :year");
+        $stmt_ledger->execute([':uid' => $user_id, ':year' => $current_year]);
+        $ledger_row = $stmt_ledger->fetch(PDO::FETCH_ASSOC);
+        if ($ledger_row && !empty($ledger_row['ledger_data'])) {
+            $ledger_json = json_decode($ledger_row['ledger_data'], true);
+            if (isset($ledger_json['months'][$current_month_tab])) {
+                foreach ($ledger_json['months'][$current_month_tab] as $row) {
+                    $item_name = strtolower(trim($row['item'] ?? ''));
+                    $completed_status = strtolower(trim($row['completed'] ?? ''));
+                    if (!empty($row['item']) && $item_name !== 'open' && $completed_status !== 'x' && $completed_status !== 'yes' && $completed_status !== 'complete') {
+                        $upcoming_ledger_items[] = $row;
+                    }
                 }
             }
         }
-    }
-} catch (Exception $e) {}
+    } catch (Exception $e) {}
+}
 
 $budget_inc = 0;
 $budget_exp = 0;
 $category_progress = [];
-try {
-    $stmt_budget = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = :year AND budget_month = :month");
-    $stmt_budget->execute([':uid' => $user_id, ':year' => $current_year, ':month' => $current_month_num]);
-    $budget_row = $stmt_budget->fetch(PDO::FETCH_ASSOC);
-    
-    // If no budget for this month, try to load base template (Year 0, Month 0)
-    if (!$budget_row || empty($budget_row['budget_data'])) {
-        $stmt_budget = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = 0 AND budget_month = 0");
-        $stmt_budget->execute([':uid' => $user_id]);
+if ($show_budget) {
+    try {
+        $stmt_budget = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = :year AND budget_month = :month");
+        $stmt_budget->execute([':uid' => $user_id, ':year' => $current_year, ':month' => $current_month_num]);
         $budget_row = $stmt_budget->fetch(PDO::FETCH_ASSOC);
-    }
-    
-    if ($budget_row && !empty($budget_row['budget_data'])) {
-        $budget_json = json_decode($budget_row['budget_data'], true);
-        if (isset($budget_json['income'])) {
-            foreach ($budget_json['income'] as $inc) { $budget_inc += (float)($inc['amount'] ?? 0); }
+        
+        if (!$budget_row || empty($budget_row['budget_data'])) {
+            $stmt_budget = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = 0 AND budget_month = 0");
+            $stmt_budget->execute([':uid' => $user_id]);
+            $budget_row = $stmt_budget->fetch(PDO::FETCH_ASSOC);
         }
-        if (isset($budget_json['expenses'])) {
-            foreach ($budget_json['expenses'] as $exp) { 
-                $amt = (float)($exp['amount'] ?? 0);
-                $budget_exp += $amt; 
-                
-                $grp = trim($exp['group'] ?? 'Uncategorized');
-                if (!isset($category_progress[$grp])) {
-                    $category_progress[$grp] = ['planned' => 0, 'actual' => 0];
+        
+        if ($budget_row && !empty($budget_row['budget_data'])) {
+            $budget_json = json_decode($budget_row['budget_data'], true);
+            if (isset($budget_json['income'])) {
+                foreach ($budget_json['income'] as $inc) { $budget_inc += (float)($inc['amount'] ?? 0); }
+            }
+            if (isset($budget_json['expenses'])) {
+                foreach ($budget_json['expenses'] as $exp) { 
+                    $amt = (float)($exp['amount'] ?? 0);
+                    $budget_exp += $amt; 
+                    
+                    $grp = trim($exp['group'] ?? 'Uncategorized');
+                    if (!isset($category_progress[$grp])) {
+                        $category_progress[$grp] = ['planned' => 0, 'actual' => 0];
+                    }
+                    $category_progress[$grp]['planned'] += $amt;
                 }
-                $category_progress[$grp]['planned'] += $amt;
             }
         }
-    }
-} catch (Exception $e) {}
+    } catch (Exception $e) {}
+}
 
-// Calculate Actuals by mapping Ledger to Budget Categories
-if (isset($ledger_json['months'][$current_month_tab])) {
+// Calculate Actuals if BOTH ledger and budget are enabled
+if ($show_ledger && $show_budget && isset($ledger_json['months'][$current_month_tab])) {
     foreach ($ledger_json['months'][$current_month_tab] as $row) {
         $cat = trim($row['category'] ?? '');
         $amt = (float)($row['amount'] ?? 0);
-        // If it matches a budget category and it is an expense (negative number in ledger)
         if (!empty($cat) && isset($category_progress[$cat]) && $amt < 0) {
             $category_progress[$cat]['actual'] += abs($amt);
         }
@@ -199,6 +231,7 @@ include 'includes/header.php';
 
 <div class="kanban-board">
     
+    <?php if ($show_planner): ?>
     <div class="kanban-column" style="grid-column: 1 / -1; min-height: auto;">
         <div class="kanban-header" style="color: #0ea5e9; border-bottom-color: #0ea5e9;">
             <span>📅 Today's Plan <span style="font-size: 0.7em; color: var(--text-muted); font-weight: normal; margin-left: 10px;">(<?= date('M j, Y') ?>)</span></span>
@@ -234,8 +267,9 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-    <!-- Active Tasks Panel -->
+    <?php if ($show_tasks): ?>
     <div class="kanban-column">
         <div class="kanban-header" style="color: var(--warning); border-bottom-color: var(--warning);">
             <span>🚀 Active Tasks</span>
@@ -266,8 +300,9 @@ include 'includes/header.php';
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-    <!-- Recent Notes Panel -->
+    <?php if ($show_notes): ?>
     <div class="kanban-column">
         <div class="kanban-header" style="color: #a855f7; border-bottom-color: #a855f7;">
             <span>📝 Notes</span>
@@ -286,8 +321,9 @@ include 'includes/header.php';
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-    <!-- Upcoming Meetings Panel -->
+    <?php if ($show_meetings): ?>
     <div class="kanban-column">
         <div class="kanban-header" style="color: var(--accent); border-bottom-color: var(--accent);">
             <span>📅 Meetings</span>
@@ -308,8 +344,9 @@ include 'includes/header.php';
             <?php endforeach; ?>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-<!-- Latest KB Panel -->
+    <?php if ($show_kb): ?>
     <div class="kanban-column" style="grid-column: 1 / -1; min-height: auto;">
         <div class="kanban-header" style="color: var(--success); border-bottom-color: var(--success);">
             <span>📚 Knowledge Base</span>
@@ -336,8 +373,9 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-    <!-- Ledger Quick Look -->
+    <?php if ($show_ledger): ?>
     <div class="kanban-column" style="grid-column: 1 / -1; min-height: auto;">
         <div class="kanban-header" style="color: #8e7cc3; border-bottom-color: #8e7cc3;">
             <span>📓 Ledger: Upcoming Bills & Items <span style="font-size: 0.7em; color: var(--text-muted); font-weight: normal; margin-left: 10px;">(<?= $current_month_tab ?> <?= $current_year ?>)</span></span>
@@ -375,8 +413,9 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-<!-- Budget Planner Quick Look with Category Progress -->
+    <?php if ($show_budget): ?>
     <div class="kanban-column" style="grid-column: 1 / -1; min-height: auto;">
         <div class="kanban-header" style="color: var(--success); border-bottom-color: var(--success);">
             <span>📊 Zero-Based Budget <span style="font-size: 0.7em; color: var(--text-muted); font-weight: normal; margin-left: 10px;">(<?= date('F Y') ?>)</span></span>
@@ -420,8 +459,7 @@ include 'includes/header.php';
                 <div style="position: absolute; width: 100%; text-align: center; top: 3px; font-size: 0.85em; font-weight: bold; color: var(--text-main); mix-blend-mode: difference;"><?= number_format($budget_pct, 1) ?>% Assigned</div>
             </div>
 
-            <!-- Actual vs. Planned Category Tracking -->
-            <?php if (!empty($category_progress)): ?>
+            <?php if (!empty($category_progress) && $show_ledger): ?>
                 <div style="margin-top: 25px; border-top: 1px dashed var(--border-color); padding-top: 20px;">
                     <h4 style="margin: 0 0 15px 0; font-size: 0.95em; color: var(--text-muted); text-transform: uppercase;">Actual vs. Planned Spending</h4>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
@@ -451,8 +489,9 @@ include 'includes/header.php';
 
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
-    <!-- Timesheet Quick Look Panel -->
+    <?php if ($show_timesheet): ?>
     <div class="kanban-column" style="grid-column: 1 / -1; min-height: auto;">
         <div class="kanban-header" style="color: var(--warning); border-bottom-color: var(--warning);">
             <span>⏱️ Current Timesheet <span style="font-size: 0.7em; color: var(--text-muted); font-weight: normal; margin-left: 10px;">(<?= htmlspecialchars($ts_dates) ?>)</span></span>
@@ -478,6 +517,7 @@ include 'includes/header.php';
             </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
 </div>
 

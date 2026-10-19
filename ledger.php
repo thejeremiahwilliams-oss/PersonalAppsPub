@@ -9,9 +9,46 @@ require_once 'config/database.php';
 require_once 'includes/audit_logger.php';
 
 require_login();
-$user_id = $_SESSION['user_id'];
+check_feature_access('finance_ledger'); // Enforce feature toggle
+
+$logged_in_user_id = $_SESSION['user_id'];
 $db = new Database();
 $pdo = $db->getConnection();
+
+// --- 100% RELIABLE EMAIL FETCH ---
+$stmt_email = $pdo->prepare("SELECT email FROM users WHERE id = :uid");
+$stmt_email->execute([':uid' => $logged_in_user_id]);
+$logged_in_email = trim($stmt_email->fetchColumn());
+
+// --- SHARING & PERMISSIONS LOGIC ---
+$target_user_id = $logged_in_user_id; 
+$permission_level = 'owner'; // 'owner', 'write', or 'read'
+
+// Check if accessing a shared ledger (Case Insensitive)
+if (isset($_GET['shared_from']) && is_numeric($_GET['shared_from']) && $_GET['shared_from'] != $logged_in_user_id) {
+    $stmt = $pdo->prepare("SELECT permission_level FROM shared_access WHERE owner_id = :owner AND LOWER(shared_with_email) = LOWER(:email) AND app_type = 'ledger'");
+    $stmt->execute([':owner' => $_GET['shared_from'], ':email' => $logged_in_email]);
+    $shared_perm = $stmt->fetchColumn();
+    
+    if ($shared_perm) {
+        $target_user_id = (int)$_GET['shared_from'];
+        $permission_level = $shared_perm; // 'read' or 'write'
+    } else {
+        die("<div style='padding:50px; text-align:center; color:red; font-family:sans-serif;'>Access Denied. This ledger has not been shared with you.</div>");
+    }
+}
+
+$is_read_only = ($permission_level === 'read');
+
+// Fetch Ledgers Shared WITH this user to populate the dropdown
+$stmt_shares = $pdo->prepare("
+    SELECT sa.owner_id, sa.permission_level, u.email 
+    FROM shared_access sa 
+    JOIN users u ON sa.owner_id = u.id 
+    WHERE LOWER(sa.shared_with_email) = LOWER(:email) AND sa.app_type = 'ledger'
+");
+$stmt_shares->execute([':email' => $logged_in_email]);
+$shared_with_me = $stmt_shares->fetchAll(PDO::FETCH_ASSOC);
 
 // --- DYNAMIC DATE LOGIC ---
 $current_year = (int)date('Y');
@@ -45,9 +82,9 @@ try {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 } catch (Exception $e) {}
 
-// Fetch active years for the dropdown
+// Fetch active years for the dropdown (from TARGET user)
 $stmt = $pdo->prepare("SELECT ledger_year FROM yearly_ledgers WHERE user_id = :uid AND is_deleted = 0 ORDER BY ledger_year ASC");
-$stmt->execute([':uid' => $user_id]);
+$stmt->execute([':uid' => $target_user_id]);
 $saved_years = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
 if (empty($saved_years)) {
@@ -61,17 +98,39 @@ if (empty($saved_years)) {
 if (isset($_GET['api'])) {
     header('Content-Type: application/json');
     
+    // API: SHARING MANAGEMENT
+    if ($_GET['api'] === 'get_shares' && $permission_level === 'owner') {
+        $stmt = $pdo->prepare("SELECT id, shared_with_email, permission_level FROM shared_access WHERE owner_id = :uid AND app_type = 'ledger'");
+        $stmt->execute([':uid' => $logged_in_user_id]);
+        echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
+        exit;
+    }
+    if ($_GET['api'] === 'add_share' && $permission_level === 'owner') {
+        $payload = json_decode(file_get_contents('php://input'), true);
+        $stmt = $pdo->prepare("INSERT INTO shared_access (owner_id, shared_with_email, app_type, permission_level) VALUES (:uid, :email, 'ledger', :perm)");
+        $stmt->execute([':uid' => $logged_in_user_id, ':email' => trim($payload['email']), ':perm' => $payload['permission']]);
+        echo json_encode(['status' => 'success']);
+        exit;
+    }
+    if ($_GET['api'] === 'remove_share' && $permission_level === 'owner') {
+        $payload = json_decode(file_get_contents('php://input'), true);
+        $stmt = $pdo->prepare("DELETE FROM shared_access WHERE id = :id AND owner_id = :uid");
+        $stmt->execute([':id' => $payload['id'], ':uid' => $logged_in_user_id]);
+        echo json_encode(['status' => 'success']);
+        exit;
+    }
+
     if ($_GET['api'] === 'budget_data') {
         $year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
         $month = isset($_GET['month']) ? (int)$_GET['month'] : (int)date('n');
 
         $stmt = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = :year AND budget_month = :month");
-        $stmt->execute([':uid' => $user_id, ':year' => $year, ':month' => $month]);
+        $stmt->execute([':uid' => $target_user_id, ':year' => $year, ':month' => $month]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row || empty($row['budget_data'])) {
             $stmt = $pdo->prepare("SELECT budget_data FROM budget_plans WHERE user_id = :uid AND budget_year = 0 AND budget_month = 0");
-            $stmt->execute([':uid' => $user_id]);
+            $stmt->execute([':uid' => $target_user_id]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
         }
 
@@ -117,7 +176,7 @@ if (isset($_GET['api'])) {
     if ($_GET['api'] === 'load') {
         $year = isset($_GET['year']) ? (int)$_GET['year'] : (int)date('Y');
         $stmt = $pdo->prepare("SELECT ledger_data FROM yearly_ledgers WHERE user_id = :uid AND ledger_year = :year AND is_deleted = 0");
-        $stmt->execute([':uid' => $user_id, ':year' => $year]);
+        $stmt->execute([':uid' => $target_user_id, ':year' => $year]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row && !empty($row['ledger_data'])) {
@@ -146,6 +205,8 @@ if (isset($_GET['api'])) {
     }
 
     if ($_GET['api'] === 'save') {
+        if ($is_read_only) { echo json_encode(['status' => 'error', 'message' => 'Read only access.']); exit; }
+
         $payload = json_decode(file_get_contents('php://input'), true);
         $year = isset($payload['year']) ? (int)$payload['year'] : (int)date('Y');
         
@@ -159,21 +220,21 @@ if (isset($_GET['api'])) {
         $stmt = $pdo->prepare("INSERT INTO yearly_ledgers (user_id, ledger_year, ledger_data, is_deleted) 
                                VALUES (:uid, :year, :data, 0) 
                                ON DUPLICATE KEY UPDATE ledger_data = :data_update, is_deleted = 0");
-        $stmt->execute([':uid' => $user_id, ':year' => $year, ':data' => $data, ':data_update' => $data]);
+        $stmt->execute([':uid' => $target_user_id, ':year' => $year, ':data' => $data, ':data_update' => $data]);
         
         $stmt_hist = $pdo->prepare("SELECT MD5(ledger_data) FROM ledger_history WHERE user_id = :uid AND ledger_year = :year ORDER BY id DESC LIMIT 1");
-        $stmt_hist->execute([':uid' => $user_id, ':year' => $year]);
+        $stmt_hist->execute([':uid' => $target_user_id, ':year' => $year]);
         $last_hist_hash = $stmt_hist->fetchColumn();
         $current_hash = md5($data);
         
         if ($last_hist_hash !== $current_hash) {
             $stmt_ins = $pdo->prepare("INSERT INTO ledger_history (user_id, ledger_year, ledger_data) VALUES (:uid, :year, :data)");
-            $stmt_ins->execute([':uid' => $user_id, ':year' => $year, ':data' => $data]);
+            $stmt_ins->execute([':uid' => $target_user_id, ':year' => $year, ':data' => $data]);
             
             $stmt_count = $pdo->prepare("SELECT COUNT(*) FROM ledger_history WHERE user_id = :uid AND ledger_year = :year");
-            $stmt_count->execute([':uid' => $user_id, ':year' => $year]);
+            $stmt_count->execute([':uid' => $target_user_id, ':year' => $year]);
             if ($stmt_count->fetchColumn() > 24) {
-                $pdo->prepare("DELETE FROM ledger_history WHERE user_id = :uid AND ledger_year = :year ORDER BY id ASC LIMIT 1")->execute([':uid' => $user_id, ':year' => $year]);
+                $pdo->prepare("DELETE FROM ledger_history WHERE user_id = :uid AND ledger_year = :year ORDER BY id ASC LIMIT 1")->execute([':uid' => $target_user_id, ':year' => $year]);
             }
         }
 
@@ -182,12 +243,13 @@ if (isset($_GET['api'])) {
     }
 
     if ($_GET['api'] === 'copy') {
+        if ($is_read_only) { echo json_encode(['status' => 'error', 'message' => 'Read only access.']); exit; }
         $payload = json_decode(file_get_contents('php://input'), true);
         $source_year = (int)$payload['source_year'];
         $target_year = (int)$payload['target_year'];
 
         $stmt = $pdo->prepare("SELECT ledger_data FROM yearly_ledgers WHERE user_id = :uid AND ledger_year = :year");
-        $stmt->execute([':uid' => $user_id, ':year' => $source_year]);
+        $stmt->execute([':uid' => $target_user_id, ':year' => $source_year]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row && !empty($row['ledger_data'])) {
@@ -213,7 +275,7 @@ if (isset($_GET['api'])) {
             $stmt_insert = $pdo->prepare("INSERT INTO yearly_ledgers (user_id, ledger_year, ledger_data, is_deleted) 
                                           VALUES (:uid, :year, :data, 0) 
                                           ON DUPLICATE KEY UPDATE ledger_data = :data_update, is_deleted = 0");
-            $stmt_insert->execute([':uid' => $user_id, ':year' => $target_year, ':data' => $new_data, ':data_update' => $new_data]);
+            $stmt_insert->execute([':uid' => $target_user_id, ':year' => $target_year, ':data' => $new_data, ':data_update' => $new_data]);
             echo json_encode(['status' => 'success']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'No data found.']);
@@ -222,11 +284,12 @@ if (isset($_GET['api'])) {
     }
 
     if ($_GET['api'] === 'delete_year') {
+        if ($is_read_only) { echo json_encode(['status' => 'error', 'message' => 'Read only access.']); exit; }
         $payload = json_decode(file_get_contents('php://input'), true);
         $year = (int)($payload['year'] ?? 0);
         if ($year > 0) {
             $stmt = $pdo->prepare("UPDATE yearly_ledgers SET is_deleted = 1 WHERE user_id = :uid AND ledger_year = :year");
-            $stmt->execute([':uid' => $user_id, ':year' => $year]);
+            $stmt->execute([':uid' => $target_user_id, ':year' => $year]);
             echo json_encode(['status' => 'success']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid year.']);
@@ -236,17 +299,18 @@ if (isset($_GET['api'])) {
 
     if ($_GET['api'] === 'deleted_years_list') {
         $stmt = $pdo->prepare("SELECT ledger_year FROM yearly_ledgers WHERE user_id = :uid AND is_deleted = 1 ORDER BY ledger_year ASC");
-        $stmt->execute([':uid' => $user_id]);
+        $stmt->execute([':uid' => $target_user_id]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_COLUMN));
         exit;
     }
 
     if ($_GET['api'] === 'restore_deleted_year') {
+        if ($is_read_only) { echo json_encode(['status' => 'error', 'message' => 'Read only access.']); exit; }
         $payload = json_decode(file_get_contents('php://input'), true);
         $year = (int)($payload['year'] ?? 0);
         if ($year > 0) {
             $stmt = $pdo->prepare("UPDATE yearly_ledgers SET is_deleted = 0 WHERE user_id = :uid AND ledger_year = :year");
-            $stmt->execute([':uid' => $user_id, ':year' => $year]);
+            $stmt->execute([':uid' => $target_user_id, ':year' => $year]);
             echo json_encode(['status' => 'success']);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Invalid year.']);
@@ -257,7 +321,7 @@ if (isset($_GET['api'])) {
     if ($_GET['api'] === 'history_list') {
         $year = (int)$_GET['year'];
         $stmt = $pdo->prepare("SELECT id, created_at FROM ledger_history WHERE user_id = :uid AND ledger_year = :year ORDER BY id DESC LIMIT 24");
-        $stmt->execute([':uid' => $user_id, ':year' => $year]);
+        $stmt->execute([':uid' => $target_user_id, ':year' => $year]);
         echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
         exit;
     }
@@ -265,7 +329,7 @@ if (isset($_GET['api'])) {
     if ($_GET['api'] === 'load_history') {
         $id = (int)$_GET['id'];
         $stmt = $pdo->prepare("SELECT ledger_data FROM ledger_history WHERE id = :id AND user_id = :uid");
-        $stmt->execute([':id' => $id, ':uid' => $user_id]);
+        $stmt->execute([':id' => $id, ':uid' => $target_user_id]);
         echo $stmt->fetchColumn();
         exit;
     }
@@ -303,7 +367,13 @@ include 'includes/header.php';
     
     .spreadsheet-wrapper { background: var(--bg-color); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-family: Arial, sans-serif; display: flex; flex-direction: column; height: 60vh; overflow: hidden; }
 
+    /* Updated Toolbar Organizing CSS */
     .toolbar-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+    .toolbar-group { display: flex; align-items: center; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px; }
+    .toolbar-group button { margin: 0; }
+    .toolbar-group button:hover { background: rgba(128, 128, 128, 0.1) !important; }
+    .toolbar-divider { width: 1px; height: 18px; background: var(--border-color); margin: 0 4px; }
+    
     #save-status { font-size: 13px; color: var(--text-muted); opacity: 0; transition: opacity 0.3s; font-weight: bold; }
     #save-status.visible { opacity: 1; }
     
@@ -327,14 +397,17 @@ include 'includes/header.php';
 
     input.sheet-input, select.sheet-input { width: 100% !important; height: 100% !important; border: none !important; border-radius: 0 !important; padding: 0 6px !important; margin: 0 !important; box-sizing: border-box !important; background: transparent !important; color: var(--text-main) !important; font-family: inherit !important; font-size: 13px !important; }
     input.sheet-input:focus, select.sheet-input:focus { outline: 2px solid var(--accent) !important; outline-offset: -2px !important; background: var(--card-bg) !important; z-index: 20; position: relative; }
+    input.sheet-input:disabled, select.sheet-input:disabled { background: transparent !important; cursor: default; }
 
     select.sheet-input { appearance: none; -webkit-appearance: none; background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" fill="gray"><polygon points="0,0 10,0 5,5"/></svg>') !important; background-repeat: no-repeat !important; background-position: right 6px center !important; padding-right: 20px !important; }
+    select.sheet-input:disabled { background-image: none !important; padding-right: 6px !important; }
 
     select.sheet-input.status-Scheduled { color: var(--text-muted) !important; }
     select.sheet-input.status-Requested { color: #eab308 !important; font-weight: bold; }
     select.sheet-input.status-Complete { color: #22c55e !important; font-weight: bold; }
 
     input[type="date"].sheet-input::-webkit-calendar-picker-indicator { cursor: pointer; }
+    input[type="date"].sheet-input:disabled::-webkit-calendar-picker-indicator { display: none; }
 
     .bg-open { background-color: var(--sheet-open) !important; }
     .bg-neg { background-color: var(--sheet-neg) !important; }
@@ -344,6 +417,7 @@ include 'includes/header.php';
     .action-btn { background: transparent; border: none; font-size: 14px; font-weight: bold; color: var(--text-muted); cursor: pointer; padding: 0 6px; transition: 0.2s; outline: none; }
     .action-btn:hover { color: var(--accent); }
     .action-btn.delete:hover { color: var(--danger); }
+    .action-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
     .tabs-bar { height: 40px; background: var(--card-bg); border-top: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 10px; gap: 5px; overflow-x: auto; flex-shrink: 0; }
     .tab-btn { background: var(--card-bg); border: 1px solid var(--border-color); border-bottom: none; padding: 8px 15px; cursor: pointer; font-size: 13px; color: var(--text-muted); white-space: nowrap; border-radius: 6px 6px 0 0; transition: 0.2s; }
@@ -360,56 +434,103 @@ include 'includes/header.php';
     .modal-header h3 { margin: 0; font-size: 1.3em; color: var(--text-main); } 
     .close-modal { background: none; border: none; font-size: 1.5em; color: var(--text-muted); cursor: pointer; padding: 0; }
     
-    #historyList { list-style: none; padding: 0; margin: 0; }
-    #historyList li { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-color); }
-    #historyList li:last-child { border-bottom: none; }
+    #historyList, #shareList { list-style: none; padding: 0; margin: 0; }
+    #historyList li, #shareList li { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid var(--border-color); }
+    #historyList li:last-child, #shareList li:last-child { border-bottom: none; }
 </style>
 
 <div class="toolbar-top">
     <div style="display:flex; gap:12px; align-items:center; flex-wrap: wrap;">
-        <h2 style="margin:0; font-size:1.4em; color:var(--text-main);">Annual Ledger</h2>
+        <h2 style="margin:0; font-size:1.4em; color:var(--text-main);">
+            <?= $permission_level === 'owner' ? 'Annual Ledger' : 'Shared Ledger (Read-Only)' ?>
+        </h2>
+        
+        <?php if (!empty($shared_with_me) || isset($_GET['shared_from'])): ?>
+        <select onchange="window.location.href=this.value" style="padding: 5px 8px; border-radius: 6px; background:var(--card-bg); color:var(--text-main); border:1px solid var(--border-color); outline:none; font-weight:bold;">
+            <option value="ledger.php">👤 My Ledger</option>
+            <?php foreach($shared_with_me as $share): 
+                $d_name = explode('@', $share['email'])[0]; // Friendly display name
+                $is_selected = (isset($_GET['shared_from']) && $_GET['shared_from'] == $share['owner_id']) ? 'selected' : '';
+            ?>
+                <option value="ledger.php?shared_from=<?= $share['owner_id'] ?>" <?= $is_selected ?>>
+                    🤝 <?= htmlspecialchars(ucfirst($d_name)) ?>'s Ledger (<?= ucfirst($share['permission_level']) ?>)
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <?php endif; ?>
+
         <div style="display: flex; gap: 5px; align-items: center;">
             <select id="year-select" style="padding: 5px 8px; border-radius: 6px; background:var(--card-bg); color:var(--text-main); border:1px solid var(--border-color); outline:none;" onchange="loadYear()">
                 <?php foreach($saved_years as $y): ?>
                     <option value="<?= $y ?>" <?= $y == $current_year ? 'selected' : '' ?>><?= $y ?></option>
                 <?php endforeach; ?>
             </select>
+            <?php if(!$is_read_only): ?>
             <button onclick="addNewYear()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: 1px solid var(--border-color);" title="Add a blank year">➕ Add</button>
             <button onclick="copyYear()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);" title="Copy columns and layout to a new year">📋 Copy</button>
+            <?php endif; ?>
         </div>
         
-        <div style="display:flex; gap:6px; align-items:center; flex-wrap: wrap;" id="standard-toolbar">
-            <button onclick="undo()" id="btn-undo" class="btn btn-small" style="font-size:11px; padding: 5px 8px; background: transparent; color: var(--text-main); border: 1px solid var(--border-color);" disabled title="Undo (Local)">↩️</button>
-            <button onclick="redo()" id="btn-redo" class="btn btn-small" style="font-size:11px; padding: 5px 8px; background: transparent; color: var(--text-main); border: 1px solid var(--border-color);" disabled title="Redo (Local)">↪️</button>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;" id="standard-toolbar">
             
-            <button onclick="openHistoryModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--accent); border: 1px solid var(--accent);" title="View Database Version History">🕒 History</button>
-            <button onclick="openSettingsModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);" title="Ledger Settings & Danger Zone">⚙️ Settings</button>
+            <?php if(!$is_read_only): ?>
+            <!-- Group 1: History & Settings -->
+            <div class="toolbar-group">
+                <button onclick="undo()" id="btn-undo" class="btn btn-small" style="font-size:11px; padding: 5px 8px; background: transparent; color: var(--text-main); border: none;" disabled title="Undo (Local)">↩️</button>
+                <button onclick="redo()" id="btn-redo" class="btn btn-small" style="font-size:11px; padding: 5px 8px; background: transparent; color: var(--text-main); border: none;" disabled title="Redo (Local)">↪️</button>
+                <div class="toolbar-divider"></div>
+                <button onclick="openHistoryModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;" title="View Database Version History">🕒 History</button>
+                <button onclick="openSettingsModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;" title="Ledger Settings & Danger Zone">⚙️ Settings</button>
+                <?php if($permission_level === 'owner'): ?>
+                    <button onclick="openShareModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: #22c55e; border: none; font-weight: bold;">🤝 Share</button>
+                <?php endif; ?>
+            </div>
+
+            <!-- Group 2: Tools -->
+            <div class="toolbar-group">
+                <button onclick="sortLedgerBy('date', true)" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;" title="Force strictly chronological order">↕️ Sort</button>
+                <div class="toolbar-divider"></div>
+                <button onclick="openAutoFillModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: #a855f7; border: none; font-weight: bold;">🪄 Auto-Fill</button>
+                <button onclick="openSetDateModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;">📅 Set Dates</button>
+                <button onclick="openSetStatusModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;">✅ Set Status</button>
+            </div>
             
-            <button onclick="openAutoFillModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: rgba(168, 85, 247, 0.1); color: #a855f7; font-weight: bold; margin-left: 10px;">🪄 Auto-Fill</button>
+            <!-- Group 3: Data & Search -->
+            <div class="toolbar-group">
+                <button onclick="document.getElementById('csv-upload').click()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;">📥 Import</button>
+                <button onclick="handleCSVExport()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;">📤 Export</button>
+                <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVImport(event)">
+                <div class="toolbar-divider"></div>
+                <input type="text" id="ledger-search" placeholder="🔍 Search..." oninput="filterTable(this.value)" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); width: 120px; outline:none; font-size: 11px;">
+            </div>
+
+            <!-- Group 4: Batch Actions (Hidden by Default) -->
+            <div class="toolbar-group" id="batch-action-group" style="display:none; background: rgba(239, 68, 68, 0.1); border-color: var(--danger);">
+                <button id="btn-batch-edit" onclick="openBatchEditModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; border: none; background: transparent; color: var(--text-main); font-weight: bold;">✏️ Category</button>
+                <button id="btn-delete-selected" onclick="deleteSelectedRows()" class="btn btn-small btn-danger" style="font-size:11px; padding: 5px 10px; border: none; font-weight: bold; margin-left:4px;">🗑 Delete</button>
+            </div>
             
-            <button onclick="openSetDateModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);">📅 Set Dates</button>
-            <button onclick="openSetStatusModal()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);">✅ Set Status</button>
-            
-            <button onclick="sortLedgerBy('date', true)" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-muted); border: 1px solid var(--border-color);" title="Force strictly chronological order">↕️ Sort Dates</button>
-            
-            <button id="btn-batch-edit" onclick="openBatchEditModal()" class="btn btn-small" style="font-size:11px; display:none; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); font-weight: bold;">✏️ Category</button>
-            <button id="btn-delete-selected" onclick="deleteSelectedRows()" class="btn btn-small btn-danger" style="font-size:11px; display:none; padding: 5px 10px; border-radius: 4px; border: none; font-weight: bold;">🗑 Delete</button>
-            
-            <input type="text" id="ledger-search" placeholder="🔍 Search..." oninput="filterTable(this.value)" style="padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-main); width: 120px; outline:none; font-size: 12px; margin-left: 10px;">
-            <button onclick="document.getElementById('csv-upload').click()" class="btn btn-small" style="font-size:11px; padding: 5px 10px;">📥 Import</button>
-            <button onclick="handleCSVExport()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background:var(--success);">📤 Export</button>
-            <input type="file" id="csv-upload" accept=".csv" style="display:none;" onchange="handleCSVImport(event)">
+            <?php else: ?>
+            <!-- Read Only Toolbar -->
+            <div class="toolbar-group">
+                <button onclick="sortLedgerBy('date', true)" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;" title="Force strictly chronological order">↕️ Sort</button>
+                <div class="toolbar-divider"></div>
+                <button onclick="handleCSVExport()" class="btn btn-small" style="font-size:11px; padding: 5px 10px; background: transparent; color: var(--text-main); border: none;">📤 Export</button>
+                <div class="toolbar-divider"></div>
+                <input type="text" id="ledger-search" placeholder="🔍 Search..." oninput="filterTable(this.value)" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); width: 120px; outline:none; font-size: 11px;">
+            </div>
+            <?php endif; ?>
         </div>
 
-        <span id="save-status">💾 Saving...</span>
+        <?php if(!$is_read_only): ?><span id="save-status">💾 Saving...</span><?php endif; ?>
     </div>
     
     <div class="toolbar-stats" id="standard-stats">
         <div style="display:flex; align-items:center; gap:6px; color:var(--text-main); font-size: 13px;">
             <strong>CHK Start:</strong>
-            <input type="number" id="chk-start" value="0" onchange="pushState(); triggerSave(true)" style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;">
+            <input type="number" id="chk-start" value="0" onchange="pushState(); triggerSave(true)" <?= $is_read_only ? 'disabled' : '' ?> style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;">
             <strong style="margin-left:5px;">CC Start:</strong>
-            <input type="number" id="cc-start" value="0" onchange="pushState(); triggerSave(true)" style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;" title="Enter CC debt as a negative number">
+            <input type="number" id="cc-start" value="0" onchange="pushState(); triggerSave(true)" <?= $is_read_only ? 'disabled' : '' ?> style="padding:4px; width:80px; border-radius:6px; border:1px solid var(--border-color); background:var(--card-bg); color:var(--text-main); font-weight:bold; outline:none; font-size: 13px;" title="Enter CC debt as a negative number">
         </div>
         <div class="global-total-box" style="margin-left: auto;">
             <div class="title" id="month-total-title">MONTH NET</div>
@@ -423,10 +544,6 @@ include 'includes/header.php';
             <div class="title">CC END</div>
             <div class="val" id="cc-end" style="color: #ef4444;">0</div>
         </div>
-        <div class="global-total-box" style="background: rgba(59, 130, 246, 0.1);">
-            <div class="title">NET TOTAL</div>
-            <div class="val" id="annual-end-total" style="color: #3b82f6;">0</div>
-        </div>
     </div>
 </div>
 
@@ -438,12 +555,17 @@ include 'includes/header.php';
             <thead></thead>
             <tbody id="ledger-body"></tbody>
         </table>
+        <?php if(!$is_read_only): ?>
         <div id="master-add-row-container" style="padding: 15px; text-align: center; border-top: 1px dashed var(--border-color);">
             <button onclick="addRow(currentTab, ledgerData.months[currentTab] ? ledgerData.months[currentTab].length - 1 : 0)" class="btn btn-small" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-main);">+ Add New Row</button>
         </div>
+        <?php endif; ?>
     </div>
     
     <div id="annual-review-view" style="display:none; padding: 20px; overflow-y: auto; flex-grow: 1; background: var(--bg-color);">
+        <p style="text-align:center; font-size:12px; color:var(--text-muted); margin-top:0;">
+            <em>Note: Credit Card transactions and internal transfers are excluded from these charts.</em>
+        </p>
         <div style="display: flex; gap: 20px; margin-bottom: 25px; flex-wrap: wrap;" id="annual-summary-cards"></div>
         <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
             <div style="flex: 1; min-width: 300px; background: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); height: 320px;">
@@ -460,6 +582,32 @@ include 'includes/header.php';
         </div>
     </div>
     <div class="tabs-bar" id="tabs-container"></div>
+</div>
+
+<?php if(!$is_read_only): ?>
+<!-- Share Modal -->
+<div id="shareModal" class="modal-overlay">
+    <div class="modal-content" style="width: 500px;">
+        <div class="modal-header">
+            <h3 style="margin:0; font-size: 1.3em; color: var(--text-main);">🤝 Share Ledger</h3>
+            <button class="close-modal" onclick="closeShareModal()">✕</button>
+        </div>
+        <p style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 15px;">Grant other users access to view or edit this ledger.</p>
+        
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <input type="email" id="shareEmail" placeholder="User's Email Address" style="flex:1; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); outline: none;">
+            <select id="sharePermission" style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); outline: none;">
+                <option value="read">Read Only</option>
+                <option value="write">Read & Write</option>
+            </select>
+            <button class="btn" style="background: var(--success); color: white;" onclick="addShare()">Grant</button>
+        </div>
+
+        <h4 style="margin-bottom: 10px; color: var(--text-main); border-bottom: 1px solid var(--border-color); padding-bottom: 5px;">Active Shares</h4>
+        <div style="background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; max-height: 200px; overflow-y: auto;">
+            <ul id="shareList"></ul>
+        </div>
+    </div>
 </div>
 
 <!-- Bulk Set Date Modal -->
@@ -513,7 +661,7 @@ include 'includes/header.php';
 
 <!-- Auto-Fill Modal -->
 <div id="autoFillModal" class="modal-overlay">
-    <div class="modal-content" style="width: 450px;">
+    <div class="modal-content" style="width: 480px;">
         <div class="modal-header">
             <h3 style="margin:0; font-size: 1.3em; color: var(--text-main);">🪄 Auto-Fill Ledger</h3>
             <button class="close-modal" onclick="closeAutoFillModal()">✕</button>
@@ -532,8 +680,8 @@ include 'includes/header.php';
             <option value="custom">Custom Paste / List</option>
         </select>
         <div id="customFillArea" style="display: none;">
-            <label style="font-weight: bold; margin-bottom: 5px; display: block; font-size: 0.9em;">Custom Items (Name & Amount):</label>
-            <textarea id="autoFillText" rows="6" placeholder="Netflix   -15.99&#10;Paycheck   2000" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); margin-bottom: 15px; outline: none; font-family: monospace;"></textarea>
+            <label style="font-weight: bold; margin-bottom: 5px; display: block; font-size: 0.9em;">Paste from Excel/Numbers:</label>
+            <textarea id="autoFillText" rows="7" placeholder="Format: Date (Optional) | Item | Account | Amount&#10;&#10;05/15     Netflix     Credit Card    -15.99&#10;05/20     Paycheck    Checking       2000" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-main); margin-bottom: 15px; outline: none; font-family: monospace; white-space: pre;"></textarea>
         </div>
         <button class="btn" style="width: 100%; background: var(--accent); color: white;" onclick="processAutoFill()">Generate Items</button>
     </div>
@@ -601,8 +749,13 @@ include 'includes/header.php';
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <script>
+    // --- THIS IS THE FIX: Automatically append the share ID to all AJAX requests ---
+    const sharedFromParam = "<?= isset($_GET['shared_from']) ? '&shared_from=' . (int)$_GET['shared_from'] : '' ?>";
+    
+    const isReadOnly = <?= $is_read_only ? 'true' : 'false' ?>;
     const tabs = ["Jan", "Feb", "Mar", "Apr", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec", "All", "Review"];
     const tabMap = {"Jan":1, "Feb":2, "Mar":3, "Apr":4, "May":5, "June":6, "July":7, "Aug":8, "Sept":9, "Oct":10, "Nov":11, "Dec":12};
     let currentTab = "<?= $current_month_tab ?>"; 
@@ -633,13 +786,79 @@ include 'includes/header.php';
     let categoryChartInst = null;
     let incomeChartInst = null;
 
+    // The core smart-filter that protects math and charts from double-counting
+    function isCCPaymentCategory(cat) {
+        if (!cat) return false;
+        let c = String(cat).toLowerCase();
+        return c.includes('cc payment') || c.includes('credit card payment') || c === '💳 cc payment';
+    }
+
     document.addEventListener("DOMContentLoaded", () => {
         renderTabs();
         loadYear();
     });
 
+    <?php if($permission_level === 'owner'): ?>
+    // --- SHARE MANAGER LOGIC ---
+    function openShareModal() {
+        document.getElementById('shareModal').style.display = 'flex';
+        loadShares();
+    }
+    
+    function closeShareModal() {
+        document.getElementById('shareModal').style.display = 'none';
+    }
+
+    function loadShares() {
+        fetch('ledger.php?api=get_shares')
+            .then(res => res.json())
+            .then(shares => {
+                let html = '';
+                shares.forEach(s => {
+                    let perm = s.permission_level === 'read' ? 'Read Only' : 'Read/Write';
+                    html += `<li>
+                        <div style="color:var(--text-main); font-size:13px;">
+                            <strong>${s.shared_with_email}</strong> <span style="color:var(--text-muted);">(${perm})</span>
+                        </div>
+                        <button onclick="removeShare(${s.id})" class="btn btn-small" style="padding:4px 8px; font-size:11px; border:1px solid var(--danger); background:transparent; color:var(--danger);">Revoke</button>
+                    </li>`;
+                });
+                document.getElementById('shareList').innerHTML = html || '<li style="color:var(--text-muted); font-size:12px;">No active shares.</li>';
+            });
+    }
+
+    function addShare() {
+        const email = document.getElementById('shareEmail').value.trim();
+        const perm = document.getElementById('sharePermission').value;
+        if (!email) return;
+        
+        fetch('ledger.php?api=add_share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, permission: perm })
+        }).then(res => res.json()).then(res => {
+            if(res.status === 'success') {
+                document.getElementById('shareEmail').value = '';
+                loadShares();
+            }
+        });
+    }
+
+    function removeShare(id) {
+        if(!confirm("Revoke this user's access?")) return;
+        fetch('ledger.php?api=remove_share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: id })
+        }).then(res => res.json()).then(res => {
+            if(res.status === 'success') loadShares();
+        });
+    }
+    <?php endif; ?>
+
     // --- ENFORCED DEFAULT SORT BY DATE ---
     function forceSortAllMonthsByDate() {
+        if(isReadOnly) return;
         tabs.forEach(m => {
             if (m !== 'Review' && m !== 'All' && ledgerData.months[m]) {
                 ledgerData.months[m].sort((a, b) => {
@@ -688,6 +907,7 @@ include 'includes/header.php';
     }
 
     function applyBulkDate() {
+        if(isReadOnly) return;
         const newDate = document.getElementById('bulkDateInput').value;
         const scope = document.getElementById('bulkDateScope').value;
 
@@ -763,6 +983,7 @@ include 'includes/header.php';
     }
 
     function applyBulkStatus() {
+        if(isReadOnly) return;
         const newStatus = document.getElementById('bulkStatusInput').value;
         const scope = document.getElementById('bulkStatusScope').value;
 
@@ -811,7 +1032,7 @@ include 'includes/header.php';
 
     // --- UNDO / REDO ENGINE ---
     function pushState() {
-        if (isUndoRedo) return;
+        if (isUndoRedo || isReadOnly) return;
         let currentState = JSON.stringify(ledgerData);
         if (historyIndex >= 0 && historyStack[historyIndex] === currentState) return; 
         
@@ -823,6 +1044,7 @@ include 'includes/header.php';
     }
 
     function undo() {
+        if (isReadOnly) return;
         if (historyIndex > 0) {
             let currentState = JSON.stringify(ledgerData);
             if (historyIndex === historyStack.length - 1 && historyStack[historyIndex] !== currentState) {
@@ -838,6 +1060,7 @@ include 'includes/header.php';
     }
 
     function redo() {
+        if (isReadOnly) return;
         if (historyIndex < historyStack.length - 1) {
             historyIndex++;
             isUndoRedo = true;
@@ -848,8 +1071,9 @@ include 'includes/header.php';
     }
 
     function updateUndoRedoUI() {
-        document.getElementById('btn-undo').disabled = historyIndex <= 0;
-        document.getElementById('btn-redo').disabled = historyIndex >= historyStack.length - 1;
+        if(isReadOnly) return;
+        if(document.getElementById('btn-undo')) document.getElementById('btn-undo').disabled = historyIndex <= 0;
+        if(document.getElementById('btn-redo')) document.getElementById('btn-redo').disabled = historyIndex >= historyStack.length - 1;
     }
 
     function loadStateFromStack(stateStr) {
@@ -917,7 +1141,7 @@ include 'includes/header.php';
         if(currentTab === 'Review' || currentTab === 'All') return Promise.resolve();
         const year = document.getElementById('year-select').value;
         const monthNum = tabMap[currentTab];
-        return fetch(`ledger.php?api=budget_data&year=${year}&month=${monthNum}`)
+        return fetch(`ledger.php?api=budget_data&year=${year}&month=${monthNum}${sharedFromParam}`)
             .then(res => res.json())
             .then(data => { budgetData = data; });
     }
@@ -932,7 +1156,7 @@ include 'includes/header.php';
         let incomes = budgetData.incomes || {};
         
         if (Object.keys(cats).length === 0 && Object.keys(incomes).length === 0) {
-            hud.innerHTML = '<div style="color:var(--text-muted); font-size:0.9em; padding:5px; width:100%; text-align:center;">No budget planned for this month. Set up categories in the Budget Planner.</div>';
+            hud.innerHTML = '<div style="color:var(--text-muted); font-size:0.9em; padding:5px; width:100%; text-align:center;">No budget planned for this month.</div>';
             return;
         }
         
@@ -949,8 +1173,9 @@ include 'includes/header.php';
         if (Array.isArray(rows)) {
             rows.forEach(row => {
                 if (!row) return;
-                // IGNORE CREDIT CARD PAYMENTS IN BUDGET
-                if (row.category === '💳 CC Payment') return;
+                
+                // IGNORE TRANSFERS IN THE BUDGET
+                if (isCCPaymentCategory(row.category)) return;
 
                 let rawCat = trimStr(row.category).toLowerCase();
                 let amt = parseFloat(row.amount);
@@ -1027,7 +1252,7 @@ include 'includes/header.php';
         const year = document.getElementById('year-select').value;
         document.getElementById('ledger-body').innerHTML = '<tr><td style="padding:20px; text-align:center;">Loading Year...</td></tr>';
         
-        fetch(`ledger.php?api=load&year=${year}`)
+        fetch(`ledger.php?api=load&year=${year}${sharedFromParam}`)
             .then(res => res.text())
             .then(text => {
                 ledgerData = processLedgerSchema(text);
@@ -1057,6 +1282,7 @@ include 'includes/header.php';
                         renderTable();
                         updateBudgetHUD();
                     }).catch(err => {
+                        console.error("Budget Fetch Error:", err);
                         renderHeaders();
                         renderTable();
                     });
@@ -1074,7 +1300,7 @@ include 'includes/header.php';
         
         if (currentTab === 'Review') {
             document.getElementById('spreadsheet-view').style.display = 'none';
-            document.getElementById('standard-toolbar').style.display = 'none';
+            if(!isReadOnly && document.getElementById('standard-toolbar')) document.getElementById('standard-toolbar').style.display = 'none';
             document.getElementById('standard-stats').style.display = 'none';
             document.getElementById('budget-hud-container').style.display = 'none';
             document.getElementById('annual-review-view').style.display = 'block';
@@ -1082,7 +1308,7 @@ include 'includes/header.php';
         } else if (currentTab === 'All') {
             document.getElementById('annual-review-view').style.display = 'none';
             document.getElementById('spreadsheet-view').style.display = 'block';
-            document.getElementById('standard-toolbar').style.display = 'flex';
+            if(!isReadOnly && document.getElementById('standard-toolbar')) document.getElementById('standard-toolbar').style.display = 'flex';
             document.getElementById('standard-stats').style.display = 'flex';
             if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = 'YEAR TO DATE';
             renderHeaders();
@@ -1091,11 +1317,11 @@ include 'includes/header.php';
         } else {
             document.getElementById('annual-review-view').style.display = 'none';
             document.getElementById('spreadsheet-view').style.display = 'block';
-            document.getElementById('standard-toolbar').style.display = 'flex';
+            if(!isReadOnly && document.getElementById('standard-toolbar')) document.getElementById('standard-toolbar').style.display = 'flex';
             document.getElementById('standard-stats').style.display = 'flex';
             if(document.getElementById('month-total-title')) document.getElementById('month-total-title').innerText = currentTab.toUpperCase() + ' NET';
             
-            if (ledgerData.months[currentTab]) {
+            if (ledgerData.months[currentTab] && !isReadOnly) {
                 ledgerData.months[currentTab].sort((a, b) => {
                     if (!a && !b) return 0;
                     if (!a) return 1;
@@ -1130,7 +1356,11 @@ include 'includes/header.php';
             if(ledgerData.months[m] && Array.isArray(ledgerData.months[m])) {
                 ledgerData.months[m].forEach(row => {
                     if (!row) return;
-                    if (row.category === '💳 CC Payment') return; // Ignore CC payments in review charts
+                    
+                    // SMART FILTER: Exclude internal transfers and CC transactions from charts
+                    if (isCCPaymentCategory(row.category)) return;
+                    if (row.method === 'Credit Card') return; 
+                    
                     let amt = parseFloat(row.amount);
                     if(!isNaN(amt)) {
                         if(amt > 0) {
@@ -1206,6 +1436,7 @@ include 'includes/header.php';
     function closeSettingsModal() { document.getElementById('settingsModal').style.display = 'none'; }
 
     async function addNewYear() {
+        if(isReadOnly) return;
         const newYear = await appPrompt("Enter the new year to add (e.g., 2026):");
         if (!newYear || isNaN(newYear) || newYear.length !== 4) return;
         let yearSelect = document.getElementById('year-select');
@@ -1221,6 +1452,7 @@ include 'includes/header.php';
     }
 
     async function clearYear() {
+        if(isReadOnly) return;
         const year = document.getElementById('year-select').value;
         const confirmed = await appConfirm(`Are you absolutely sure you want to DELETE ALL DATA for ${year}?\n\nThis will erase all months, amounts, and statuses for this year. This action CANNOT be undone.`);
         if (!confirmed) return;
@@ -1254,12 +1486,13 @@ include 'includes/header.php';
     }
 
     async function deleteYear() {
+        if(isReadOnly) return;
         const year = document.getElementById('year-select').value;
         const confirmed = await appConfirm(`Are you sure you want to DELETE the entire ledger for ${year}?\n\nIt will be hidden from the menu, but can be recovered in Settings.`);
         if (!confirmed) return;
         
         closeSettingsModal();
-        fetch('ledger.php?api=delete_year', {
+        fetch('ledger.php?api=delete_year' + sharedFromParam, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ year: year })
@@ -1280,7 +1513,7 @@ include 'includes/header.php';
 
     function openRecoveryModal() {
         closeSettingsModal();
-        fetch('ledger.php?api=deleted_years_list')
+        fetch('ledger.php?api=deleted_years_list' + sharedFromParam)
             .then(res => res.json())
             .then(list => {
                 let sel = document.getElementById('recoverYearSelect');
@@ -1297,9 +1530,10 @@ include 'includes/header.php';
     function closeRecoveryModal() { document.getElementById('recoveryModal').style.display = 'none'; }
 
     function recoverYear() {
+        if(isReadOnly) return;
         let year = document.getElementById('recoverYearSelect').value;
         if (!year) return;
-        fetch('ledger.php?api=restore_deleted_year', {
+        fetch('ledger.php?api=restore_deleted_year' + sharedFromParam, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ year: year })
@@ -1323,7 +1557,7 @@ include 'includes/header.php';
 
     function openHistoryModal() {
         const year = document.getElementById('year-select').value;
-        fetch(`ledger.php?api=history_list&year=${year}`)
+        fetch(`ledger.php?api=history_list&year=${year}${sharedFromParam}`)
             .then(res => res.json())
             .then(list => {
                 let html = '';
@@ -1331,7 +1565,7 @@ include 'includes/header.php';
                     let d = new Date(h.created_at + ' UTC'); 
                     html += `<li>
                         <span style="color:var(--text-main); font-size:13px;">${d.toLocaleString()}</span>
-                        <button onclick="restoreHistory(${h.id})" class="btn btn-small" style="padding:4px 8px; font-size:11px; border:1px solid var(--border-color); background:transparent; color:var(--text-main);">Restore</button>
+                        <button onclick="restoreHistory(${h.id})" class="btn btn-small" style="padding:4px 8px; font-size:11px; border:1px solid var(--border-color); background:transparent; color:var(--text-main);" ${isReadOnly ? 'disabled' : ''}>Restore</button>
                     </li>`;
                 });
                 document.getElementById('historyList').innerHTML = html || '<li style="color:var(--text-muted);">No history snapshots found.</li>';
@@ -1342,8 +1576,9 @@ include 'includes/header.php';
     function closeHistoryModal() { document.getElementById('historyModal').style.display = 'none'; }
 
     async function restoreHistory(id) {
+        if(isReadOnly) return;
         if(!(await appConfirm("Restore this database version? Unsaved changes will be lost."))) return;
-        fetch(`ledger.php?api=load_history&id=${id}`)
+        fetch(`ledger.php?api=load_history&id=${id}${sharedFromParam}`)
             .then(res => res.text())
             .then(text => {
                 pushState();
@@ -1360,6 +1595,7 @@ include 'includes/header.php';
     }
 
     async function copyYear() {
+        if(isReadOnly) return;
         const sourceYear = document.getElementById('year-select').value;
         const targetYear = await appPrompt(`Copy ${sourceYear} ledger structure and items to which year? (e.g., 2027)`);
         if (!targetYear || isNaN(targetYear) || targetYear.length !== 4) return;
@@ -1367,7 +1603,7 @@ include 'includes/header.php';
         const confirmed = await appConfirm(`This will copy all columns, items, descriptions, and amounts from ${sourceYear} to ${targetYear} (Dates updated to ${targetYear}, checkmarks cleared). This will OVERWRITE any existing ${targetYear} ledger. Proceed?`);
         if (!confirmed) return;
 
-        fetch('ledger.php?api=copy', {
+        fetch('ledger.php?api=copy' + sharedFromParam, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source_year: sourceYear, target_year: targetYear })
@@ -1441,6 +1677,7 @@ include 'includes/header.php';
     }
 
     async function handleCSVImport(event) {
+        if(isReadOnly) return;
         const file = event.target.files[0];
         if (!file) return;
 
@@ -1591,6 +1828,7 @@ include 'includes/header.php';
     }
     
     function processAutoFill() {
+        if(isReadOnly) return;
         const scope = document.getElementById('autoFillScope').value;
         const source = document.getElementById('autoFillSource').value;
         let itemsToAdd = [];
@@ -1598,12 +1836,12 @@ include 'includes/header.php';
         if (source === 'budget') {
             if (budgetData && budgetData.incomes) {
                 for (const [incName, amt] of Object.entries(budgetData.incomes)) {
-                    itemsToAdd.push({ item: incName, method: 'Checking', category: incName, amount: Math.abs(parseFloat(amt) || 0) });
+                    itemsToAdd.push({ date: '', item: incName, method: 'Checking', category: incName, amount: Math.abs(parseFloat(amt) || 0) });
                 }
             }
             if (budgetData && budgetData.categories) {
                 for (const [catName, amt] of Object.entries(budgetData.categories)) {
-                    itemsToAdd.push({ item: catName, method: 'Checking', category: catName, amount: -Math.abs(parseFloat(amt) || 0) });
+                    itemsToAdd.push({ date: '', item: catName, method: 'Checking', category: catName, amount: -Math.abs(parseFloat(amt) || 0) });
                 }
             }
         } else {
@@ -1612,20 +1850,104 @@ include 'includes/header.php';
             lines.forEach(line => {
                 line = line.trim();
                 if (!line) return;
-                let name = line; let amount = 0; let parts = line.split('\t');
-                if (parts.length >= 2) {
-                    name = parts[0].trim(); amount = parseFloat(parts[parts.length - 1].replace(/[^0-9.-]+/g,"")) || 0;
-                } else {
-                    parts = line.split(',');
-                    if (parts.length >= 2) {
-                        let possibleAmt = parseFloat(parts[parts.length - 1].replace(/[^0-9.-]+/g,""));
-                        if (!isNaN(possibleAmt)) { amount = possibleAmt; parts.pop(); name = parts.join(',').trim(); }
+                
+                let date = '';
+                let name = '';
+                let account = 'Checking';
+                let amountStr = '';
+                let amount = 0;
+                
+                if (line.includes('\t')) {
+                    let parts = line.split('\t').map(p => p.trim());
+                    if (parts.length >= 4) {
+                        date = parts[0];
+                        name = parts[1];
+                        account = parts[2];
+                        amountStr = parts[3];
+                    } else if (parts.length === 3) {
+                        date = parts[0];
+                        name = parts[1];
+                        amountStr = parts[2];
+                    } else if (parts.length === 2) {
+                        name = parts[0];
+                        amountStr = parts[1];
                     } else {
-                        let match = line.match(/(.+?)\s+\$?(-?[0-9,.]+)$/);
-                        if (match) { name = match[1].trim(); amount = parseFloat(match[2].replace(/[^0-9.-]+/g,"")) || 0; }
+                        name = parts[0];
+                    }
+                } else {
+                    let tempLine = line;
+                    
+                    // Match Date at the beginning (e.g. 10/15, 2026-10-15, Oct 15)
+                    let dateMatch = tempLine.match(/^(\d{1,4}[-/]\d{1,2}(?:[-/]\d{2,4})?|[A-Za-z]{3,9}\s+\d{1,2}(?:,?\s+\d{4})?)\s+/);
+                    if (dateMatch) {
+                        date = dateMatch[1];
+                        tempLine = tempLine.substring(dateMatch[0].length).trim();
+                    }
+                    
+                    // Match Amount at the end (e.g. -15.99, (50.00), 1200)
+                    let amtMatch = tempLine.match(/\s+\$?(-?[\d,]+(?:\.\d{2})?|\([\d,]+(?:\.\d{2})?\))$/);
+                    if (amtMatch) {
+                        amountStr = amtMatch[1];
+                        tempLine = tempLine.substring(0, tempLine.length - amtMatch[0].length).trim();
+                    }
+                    
+                    // Match Account near the end
+                    let accMatch = tempLine.match(/\s+(Checking|Credit Card|Credit|Visa|Mastercard|CC|Debit)$/i);
+                    if (accMatch) {
+                        account = accMatch[1];
+                        name = tempLine.substring(0, tempLine.length - accMatch[0].length).trim();
+                    } else {
+                        name = tempLine.trim();
                     }
                 }
-                itemsToAdd.push({ item: name, method: 'Checking', category: '', amount: amount });
+
+                if (typeof amountStr === 'string' && amountStr !== '') {
+                    if (amountStr.includes('(') && amountStr.includes(')')) {
+                        amount = "-" + amountStr.replace(/[^\d.]/g, '');
+                    } else {
+                        let sign = amountStr.includes('-') ? '-' : '';
+                        amount = sign + amountStr.replace(/[^\d.]/g, '');
+                    }
+                } else if (typeof amountStr === 'number') {
+                    amount = amountStr;
+                }
+                amount = parseFloat(amount) || 0;
+
+                if (/credit|cc|visa|master/i.test(account)) account = 'Credit Card';
+                else account = 'Checking';
+
+                if (date !== '') {
+                    let cleanVal = date.replace(/-/g, '/');
+                    let mmddMatch = cleanVal.match(/^(\d{1,2})[\/](\d{1,2})$/);
+                    let currentYearVal = document.getElementById('year-select') ? document.getElementById('year-select').value : new Date().getFullYear();
+                    
+                    if (mmddMatch) {
+                        // Only Month and Day provided
+                        let d = new Date(`${currentYearVal}/${mmddMatch[1]}/${mmddMatch[2]}`);
+                        if (!isNaN(d.getTime())) {
+                            let mm = String(d.getMonth() + 1).padStart(2, '0');
+                            let dd = String(d.getDate()).padStart(2, '0');
+                            date = `${d.getFullYear()}-${mm}-${dd}`;
+                        } else {
+                            date = '';
+                        }
+                    } else {
+                        let d = new Date(cleanVal);
+                        if (!isNaN(d.getTime())) {
+                            let mm = String(d.getMonth() + 1).padStart(2, '0');
+                            let dd = String(d.getDate()).padStart(2, '0');
+                            let yy = d.getFullYear();
+                            if (yy === 2001 && !cleanVal.includes('2001') && !cleanVal.includes('01')) {
+                                yy = currentYearVal;
+                            }
+                            date = `${yy}-${mm}-${dd}`;
+                        } else {
+                            date = '';
+                        }
+                    }
+                }
+
+                itemsToAdd.push({ date: date, item: name, method: account, category: '', amount: amount });
             });
         }
         
@@ -1644,7 +1966,8 @@ include 'includes/header.php';
                 let emptyIdx = ledgerData.months[m].findIndex(r => (!r.item || String(r.item).trim() === '') && (!r.amount || String(r.amount).trim() === ''));
                 let rowObj = {};
                 ledgerData.columns.forEach(col => {
-                    if (col.id === 'item') rowObj[col.id] = newItem.item;
+                    if (col.id === 'date') rowObj[col.id] = newItem.date || '';
+                    else if (col.id === 'item') rowObj[col.id] = newItem.item;
                     else if (col.id === 'amount') rowObj[col.id] = newItem.amount;
                     else if (col.id === 'method') rowObj[col.id] = newItem.method;
                     else if (col.id === 'category') rowObj[col.id] = newItem.category;
@@ -1710,7 +2033,7 @@ include 'includes/header.php';
     function renderHeaders() {
         const thead = document.querySelector('#ledger-table thead');
         let headHtml = '<tr class="header-row">';
-        headHtml += `<td style="width: 30px; min-width: 30px; background: var(--card-bg); text-align: center; border-right: 1px solid var(--sheet-border-heavy);"><input type="checkbox" id="select-all-cb" onclick="toggleAllRows(this)" style="cursor:pointer; width: 14px; height: 14px; accent-color: var(--accent);"></td>`;
+        headHtml += `<td style="width: 30px; min-width: 30px; background: var(--card-bg); text-align: center; border-right: 1px solid var(--sheet-border-heavy);"><input type="checkbox" id="select-all-cb" onclick="toggleAllRows(this)" style="cursor:pointer; width: 14px; height: 14px; accent-color: var(--accent);" ${isReadOnly ? 'disabled' : ''}></td>`;
 
         ledgerData.columns.forEach((col, cIdx) => {
             let colNameDisplay = col.name;
@@ -1718,14 +2041,23 @@ include 'includes/header.php';
                 let arrow = sortStates[col.id] === false ? '↓' : (sortStates[col.id] === true ? '↑' : '↕️');
                 colNameDisplay = `<a href="javascript:void(0)" onclick="sortLedgerBy('${col.id}')" style="color: inherit; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 4px;" title="Click to Sort by ${col.name}">${col.name} <span style="font-size: 0.8em; opacity: 0.7;">${arrow}</span></a>`;
             }
-            headHtml += `<td style="width:${col.width || '100px'}; min-width:${col.width || '100px'};"><div style="display:flex; justify-content:space-between; align-items:center; padding: 0 4px;"><span style="flex-grow:1; text-align:center; display: flex; justify-content: center;">${colNameDisplay}</span><button onclick="removeColumn(${cIdx})" class="action-btn delete" style="color:var(--sheet-header-text); font-size:11px; padding:0;" title="Delete Column">✕</button></div></td>`;
+            headHtml += `<td style="width:${col.width || '100px'}; min-width:${col.width || '100px'};"><div style="display:flex; justify-content:space-between; align-items:center; padding: 0 4px;"><span style="flex-grow:1; text-align:center; display: flex; justify-content: center;">${colNameDisplay}</span>`;
+            if(!isReadOnly) {
+                headHtml += `<button onclick="removeColumn(${cIdx})" class="action-btn delete" style="color:var(--sheet-header-text); font-size:11px; padding:0;" title="Delete Column">✕</button>`;
+            }
+            headHtml += `</div></td>`;
         });
         
-        headHtml += `<td style="width: 70px; min-width: 70px; background: transparent; border: none;"><button onclick="addColumn()" class="action-btn" style="color:var(--accent); background:var(--bg-color); border:1px solid var(--border-color); border-radius:4px; padding:4px 8px; margin-left: 5px;" title="Add Column">+ Col</button></td></tr>`;
+        headHtml += `<td style="width: 70px; min-width: 70px; background: transparent; border: none;">`;
+        if(!isReadOnly) {
+            headHtml += `<button onclick="addColumn()" class="action-btn" style="color:var(--accent); background:var(--bg-color); border:1px solid var(--border-color); border-radius:4px; padding:4px 8px; margin-left: 5px;" title="Add Column">+ Col</button>`;
+        }
+        headHtml += `</td></tr>`;
         thead.innerHTML = headHtml;
     }
 
     async function addColumn() {
+        if(isReadOnly) return;
         let name = await appPrompt("Enter new column name:");
         if (!name) return;
         pushState();
@@ -1734,6 +2066,7 @@ include 'includes/header.php';
     }
 
     async function removeColumn(index) {
+        if(isReadOnly) return;
         const col = ledgerData.columns[index];
         if (col.id === 'amount' || col.id === 'total' || col.id === 'method') {
             if(!(await appConfirm(`Warning: Deleting the ${col.name} column may disable math or tracking features. Are you sure?`))) return;
@@ -1746,7 +2079,7 @@ include 'includes/header.php';
     }
 
     function toggleAllRows(source) {
-        document.querySelectorAll('.row-select-cb').forEach(cb => { if (cb.closest('tr').style.display !== 'none') cb.checked = source.checked; });
+        document.querySelectorAll('.row-select-cb').forEach(cb => { if (cb.closest('tr').style.display !== 'none' && !cb.disabled) cb.checked = source.checked; });
         updateMultiDeleteUI();
     }
 
@@ -1755,16 +2088,18 @@ include 'includes/header.php';
         const btnDel = document.getElementById('btn-delete-selected');
         const btnEdit = document.getElementById('btn-batch-edit');
         if (checked.length > 0) {
-            btnDel.style.display = 'inline-block'; btnDel.innerText = `🗑 Delete (${checked.length})`;
-            btnEdit.style.display = 'inline-block'; btnEdit.innerText = `✏️ Category (${checked.length})`;
+            if(btnDel) { btnDel.style.display = 'inline-block'; btnDel.innerText = `🗑 Delete (${checked.length})`; }
+            if(btnEdit) { btnEdit.style.display = 'inline-block'; btnEdit.innerText = `✏️ Category (${checked.length})`; }
         } else {
-            btnDel.style.display = 'none'; btnEdit.style.display = 'none';
+            if(btnDel) btnDel.style.display = 'none'; 
+            if(btnEdit) btnEdit.style.display = 'none';
         }
         const selectAllCb = document.getElementById('select-all-cb');
-        if(selectAllCb) selectAllCb.checked = (checked.length > 0 && checked.length === document.querySelectorAll('.row-select-cb').length);
+        if(selectAllCb) selectAllCb.checked = (checked.length > 0 && checked.length === document.querySelectorAll('.row-select-cb:not([disabled])').length);
     }
 
     async function deleteSelectedRows() {
+        if(isReadOnly) return;
         const checked = document.querySelectorAll('.row-select-cb:checked');
         if (checked.length === 0 || !(await appConfirm(`Delete ${checked.length} selected row(s)?`))) return;
         
@@ -1788,6 +2123,7 @@ include 'includes/header.php';
     }
 
     function openBatchEditModal() {
+        if(isReadOnly) return;
         const checked = document.querySelectorAll('.row-select-cb:checked');
         if(checked.length === 0) return;
         
@@ -1811,6 +2147,7 @@ include 'includes/header.php';
     function closeBatchEditModal() { document.getElementById('batchEditModal').style.display = 'none'; }
 
     function applyBatchEdit() {
+        if(isReadOnly) return;
         const checked = document.querySelectorAll('.row-select-cb:checked');
         const newCat = document.getElementById('batchEditCategory').value;
         
@@ -1825,6 +2162,7 @@ include 'includes/header.php';
     }
 
     function addRow(month, index) {
+        if(isReadOnly) return;
         pushState(); 
         let newRow = {};
         ledgerData.columns.forEach(col => { 
@@ -1839,6 +2177,7 @@ include 'includes/header.php';
     }
 
     async function removeRow(month, index) {
+        if(isReadOnly) return;
         if (!(await appConfirm("Delete this row?"))) return;
         pushState(); 
         ledgerData.months[month].splice(index, 1);
@@ -1861,7 +2200,7 @@ include 'includes/header.php';
                     if (!row) return;
                     let amount = parseFloat(row.amount);
                     if (!isNaN(amount) && row.amount !== "") {
-                        let isCCPayment = (row.category === '💳 CC Payment');
+                        let isCCPayment = isCCPaymentCategory(row.category);
                         if (row.method === 'Credit Card') {
                             if (isCCPayment) { cc += amount; } 
                             else { cc += amount; }
@@ -1876,7 +2215,6 @@ include 'includes/header.php';
         
         if (document.getElementById('chk-end')) document.getElementById('chk-end').innerText = chk.toFixed(0);
         if (document.getElementById('cc-end')) document.getElementById('cc-end').innerText = cc.toFixed(0);
-        if (document.getElementById('annual-end-total')) document.getElementById('annual-end-total').innerText = (chk + cc).toFixed(0);
         
         updateBudgetHUD();
     }
@@ -1946,7 +2284,7 @@ include 'includes/header.php';
         incs.forEach(i => { if(!combinedOptions.includes(i)) combinedOptions.push(i); });
         combinedOptions.sort((a,b) => a.localeCompare(b));
 
-        let currentNetTotal = runChk + runCC;
+        let currentNetTotal = runChk;
         let finalNetTotal = currentNetTotal;
 
         rowsToRender.forEach((itemObj, loopIndex) => {
@@ -1964,14 +2302,14 @@ include 'includes/header.php';
             let hasAmount = !isNaN(amount) && row.amount !== "";
             
             if (hasAmount) {
-                let isCCPayment = (row.category === '💳 CC Payment');
+                let isCCPayment = isCCPaymentCategory(row.category);
                 if (row.method === 'Credit Card') {
                     if (isCCPayment) { runCC += amount; } else { runCC += amount; }
                 } else {
                     runChk += amount;
                     if (isCCPayment) { runCC -= amount; }
                 }
-                currentNetTotal = runChk + runCC;
+                currentNetTotal = runChk;
             }
             finalNetTotal = currentNetTotal;
 
@@ -1979,7 +2317,9 @@ include 'includes/header.php';
             let amountBg = hasAmount ? (amount < 0 ? "bg-neg" : "bg-pos") : "";
             let netBg = "bg-tot-net";
             
-            let html = `<td style="text-align:center; background: var(--card-bg); border-right: 1px solid var(--border-color);"><input type="checkbox" class="row-select-cb" data-month="${month}" data-idx="${index}" value="${loopIndex}" onchange="updateMultiDeleteUI()" style="cursor:pointer; width: 14px; height: 14px; accent-color: var(--accent);"></td>`;
+            let disabledAttr = isReadOnly ? 'disabled' : '';
+
+            let html = `<td style="text-align:center; background: var(--card-bg); border-right: 1px solid var(--border-color);"><input type="checkbox" class="row-select-cb" data-month="${month}" data-idx="${index}" value="${loopIndex}" onchange="updateMultiDeleteUI()" style="cursor:pointer; width: 14px; height: 14px; accent-color: var(--accent);" ${disabledAttr}></td>`;
             
             ledgerData.columns.forEach(col => {
                 let cellValue = row[col.id] || '';
@@ -1999,13 +2339,13 @@ include 'includes/header.php';
                 if (col.id === 'total') {
                     html += `<td class="cell-total ${netBg}" style="${align} padding-right:4px; font-weight:bold;">${hasAmount || loopIndex === 0 ? currentNetTotal.toFixed(0) : ''}</td>`;
                 } else if (col.id === 'amount') {
-                    html += `<td class="cell-amount ${amountBg}"><input type="number" step="0.01" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
+                    html += `<td class="cell-amount ${amountBg}"><input type="number" step="0.01" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}></td>`;
                 } else if (col.id === 'date') {
-                    html += `<td><input type="date" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
+                    html += `<td><input type="date" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}></td>`;
                 } else if (col.id === 'item') {
-                    html += `<td class="cell-item ${itemBg}"><input type="text" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
+                    html += `<td class="cell-item ${itemBg}"><input type="text" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}></td>`;
                 } else if (col.id === 'method') {
-                    html += `<td><select class="sheet-input" data-col="method" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}">
+                    html += `<td><select class="sheet-input" data-col="method" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}>
                         <option value="Checking" ${cellValue === 'Checking' || cellValue === '' ? 'selected' : ''}>Checking</option>
                         <option value="Credit Card" ${cellValue === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
                     </select></td>`;
@@ -2013,22 +2353,29 @@ include 'includes/header.php';
                     let opts = `<option value=""></option>`;
                     combinedOptions.forEach(opt => { opts += `<option value="${opt}" ${trimStr(cellValue).toLowerCase() === trimStr(opt).toLowerCase() ? 'selected' : ''}>${opt}</option>`; });
                     if (cellValue && !combinedOptions.map(k=>trimStr(k).toLowerCase()).includes(trimStr(cellValue).toLowerCase())) opts += `<option value="${cellValue}" selected>${cellValue}</option>`;
-                    html += `<td><select class="sheet-input" data-col="category" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}">${opts}</select></td>`;
+                    html += `<td><select class="sheet-input" data-col="category" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}>${opts}</select></td>`;
                 } else if (col.id === 'completed') {
                     let statuses = ['Scheduled', 'Requested', 'Complete'];
                     let statusClass = cellValue ? 'status-' + cellValue : '';
                     let opts = `<option value=""></option>`;
                     statuses.forEach(s => { opts += `<option value="${s}" ${trimStr(cellValue).toLowerCase() === trimStr(s).toLowerCase() ? 'selected' : ''}>${s}</option>`; });
-                    html += `<td><select class="sheet-input ${statusClass}" data-col="completed" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}">${opts}</select></td>`;
+                    html += `<td><select class="sheet-input ${statusClass}" data-col="completed" onfocus="pushState()" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}>${opts}</select></td>`;
                 } else {
-                    html += `<td><input type="text" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}"></td>`;
+                    html += `<td><input type="text" class="sheet-input" onfocus="pushState()" value="${cellValue}" onchange="updateRow('${month}', ${index}, '${col.id}', this.value)" style="${align}" ${disabledAttr}></td>`;
                 }
             });
 
             if (isAllTab) {
-                html += `<td style="text-align:center; border:none; background:transparent;"><button onclick="removeRow('${month}', ${index})" class="action-btn delete" title="Delete Row">✕</button></td>`;
+                html += `<td style="text-align:center; border:none; background:transparent;">`;
+                if(!isReadOnly) html += `<button onclick="removeRow('${month}', ${index})" class="action-btn delete" title="Delete Row">✕</button>`;
+                html += `</td>`;
             } else {
-                html += `<td style="text-align:center; border:none; background:transparent;"><button onclick="addRow('${month}', ${index})" class="action-btn" title="Add Row Below">+</button><button onclick="removeRow('${month}', ${index})" class="action-btn delete" title="Delete Row">✕</button></td>`;
+                html += `<td style="text-align:center; border:none; background:transparent;">`;
+                if(!isReadOnly) {
+                    html += `<button onclick="addRow('${month}', ${index})" class="action-btn" title="Add Row Below">+</button>
+                             <button onclick="removeRow('${month}', ${index})" class="action-btn delete" title="Delete Row">✕</button>`;
+                }
+                html += `</td>`;
             }
             tr.innerHTML = html;
             tbody.appendChild(tr);
@@ -2037,23 +2384,21 @@ include 'includes/header.php';
         const mTotal = document.getElementById('month-total-cell');
         if (mTotal) {
             let initialNet = 0;
-            if(document.getElementById('chk-start') && document.getElementById('cc-start')) {
-                initialNet = (parseFloat(document.getElementById('chk-start').value) || 0) + (parseFloat(document.getElementById('cc-start').value) || 0);
+            if(document.getElementById('chk-start')) {
+                initialNet = (parseFloat(document.getElementById('chk-start').value) || 0);
             }
             if (currentTab !== 'All' && monthStartBalances[currentTab]) {
-                initialNet = monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc;
+                initialNet = monthStartBalances[currentTab].chk;
             }
             let netChange = finalNetTotal - initialNet;
             mTotal.innerText = netChange.toFixed(0);
         }
         
-        const masterAddBtn = document.getElementById('master-add-row-container');
-        if (masterAddBtn) { masterAddBtn.style.display = isAllTab ? 'none' : 'block'; }
-        
         filterTable(document.getElementById('ledger-search').value);
     }
 
     function updateRow(month, index, field, value) {
+        if(isReadOnly) return;
         ledgerData.months[month][index][field] = value;
         if (field === 'amount' || field === 'item' || field === 'date' || field === 'category' || field === 'completed' || field === 'method') {
             calculateAllTotals();
@@ -2063,7 +2408,7 @@ include 'includes/header.php';
     }
 
     function updateTableVisuals() {
-        let currentTotal = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc : 0;
+        let currentTotal = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk : 0;
         let finalTotal = currentTotal;
         const totalColors = ['bg-tot-1', 'bg-tot-2', 'bg-tot-3'];
         let colorIndex = 0;
@@ -2084,14 +2429,14 @@ include 'includes/header.php';
             let hasAmount = !isNaN(amount) && row.amount !== "";
             
             if (hasAmount) {
-                let isCCPayment = (row.category === '💳 CC Payment');
+                let isCCPayment = isCCPaymentCategory(row.category);
                 if (row.method === 'Credit Card') {
                     if (isCCPayment) { runCC += amount; } else { runCC += amount; }
                 } else {
                     runChk += amount;
                     if (isCCPayment) { runCC -= amount; }
                 }
-                currentTotal = runChk + runCC;
+                currentTotal = runChk;
             }
             finalTotal = currentTotal;
 
@@ -2117,7 +2462,7 @@ include 'includes/header.php';
 
         const mTotal = document.getElementById('month-total-cell');
         if (mTotal) {
-            let initialNet = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk + monthStartBalances[currentTab].cc : 0;
+            let initialNet = monthStartBalances[currentTab] ? monthStartBalances[currentTab].chk : 0;
             let netChange = finalTotal - initialNet;
             mTotal.innerText = netChange.toFixed(0);
         }
@@ -2137,6 +2482,7 @@ include 'includes/header.php';
     }
 
     function triggerSave(recalcAll = false) {
+        if(isReadOnly) return;
         clearTimeout(saveTimeout);
         if(document.getElementById('save-status')) {
             document.getElementById('save-status').innerText = "⏳ Pending...";
@@ -2150,8 +2496,9 @@ include 'includes/header.php';
     }
 
     function saveData() {
+        if(isReadOnly) return;
         if(document.getElementById('save-status')) document.getElementById('save-status').innerText = "⏳ Saving...";
-        fetch('ledger.php?api=save', {
+        fetch('ledger.php?api=save' + sharedFromParam, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ year: document.getElementById('year-select').value, data: ledgerData })

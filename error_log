@@ -100,3 +100,17 @@ Stack trace:
 #0 /home/brokwxrm/app.brokenhappy.com/combined.php(93): PDOStatement->execute()
 #1 {main}
   thrown in /home/brokwxrm/app.brokenhappy.com/combined.php on line 93
+[16-Oct-2026 15:43:37 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function check_feature_access() in /home/brokwxrm/app.brokenhappy.com/budget.php:4
+Stack trace:
+#0 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/budget.php on line 4
+[16-Oct-2026 11:30:11 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'u.name' in 'SELECT' in /home/brokwxrm/app.brokenhappy.com/ledger.php:40
+Stack trace:
+#0 /home/brokwxrm/app.brokenhappy.com/ledger.php(40): PDO->prepare()
+#1 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 40
+[16-Oct-2026 11:30:20 America/Chicago] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'u.name' in 'SELECT' in /home/brokwxrm/app.brokenhappy.com/ledger.php:40
+Stack trace:
+#0 /home/brokwxrm/app.brokenhappy.com/ledger.php(40): PDO->prepare()
+#1 {main}
+  thrown in /home/brokwxrm/app.brokenhappy.com/ledger.php on line 40
